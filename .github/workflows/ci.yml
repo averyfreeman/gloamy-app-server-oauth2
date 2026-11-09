@@ -1,11 +1,13 @@
 name: CI
 
 on:
+  push:
+    branches: [main]
   pull_request:
     branches: [main]
 
 concurrency:
-  group: ci-${{ github.event.pull_request.number }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -18,6 +20,7 @@ env:
 jobs:
   test:
     name: Test (${{ matrix.os }})
+    if: github.event_name == 'pull_request'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     strategy:
@@ -86,6 +89,7 @@ jobs:
 
   msrv:
     name: Rust 1.96 minimum
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:

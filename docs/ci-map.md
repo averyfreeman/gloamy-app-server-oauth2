@@ -9,9 +9,9 @@ For event-by-event delivery behavior across PR and merge paths, see [`.github/wo
 ### Merge-Blocking
 
 - `.github/workflows/ci.yml` (`CI`)
-  - Trigger: pull requests targeting `main`
-  - Purpose: run Rust checks and release-mode builds for the three maintained host targets
-  - Merge gate: this is the primary PR quality gate
+  - Trigger: pushes to `main` and pull requests targeting `main`
+  - Purpose: PRs run tests and the minimum-supported Rust check; PRs and main pushes build all three maintained host targets
+  - Gate: this is the primary PR quality gate and main-push build gate
 
 ### Non-Blocking but Important
 
@@ -21,8 +21,8 @@ For event-by-event delivery behavior across PR and merge paths, see [`.github/wo
   - Usage: cross-target build verification before high-risk merges/releases
 
 - `.github/workflows/release.yml` (`Beta Release`)
-  - Trigger: push to `main`
-  - Purpose: build artifacts, publish prerelease tags, and push `beta` Docker image
+  - Trigger: manual (`workflow_dispatch`)
+  - Purpose: build artifacts, publish prerelease tags, and push the `beta` Docker image on request
 
 - `.github/workflows/promote-release.yml` (`Promote Release`)
   - Trigger: manual (`workflow_dispatch`) with explicit semver input
@@ -34,17 +34,17 @@ For event-by-event delivery behavior across PR and merge paths, see [`.github/wo
 
 ## Trigger Map
 
-- `CI`: PRs to `main`
+- `CI`: pushes to `main` and PRs to `main`
 - `CI Full Matrix`: manual dispatch
-- `Beta Release`: pushes to `main`
+- `Beta Release`: manual dispatch
 - `Promote Release`: manual dispatch with `version` input
 - `Dependabot`: scheduled updates
 
 ## Fast Triage Guide
 
-1. PR check failure: inspect `.github/workflows/ci.yml` run logs.
+1. Main-push build or PR check failure: inspect `.github/workflows/ci.yml` run logs.
 2. Cross-target build concern: run `.github/workflows/ci-full.yml` manually and inspect matrix job logs.
-3. Beta release issue after merge: inspect `.github/workflows/release.yml` `version`, `build`, `publish`, and `docker` jobs.
+3. Beta release issue: inspect `.github/workflows/release.yml` `version`, `build`, `publish`, and `docker` jobs.
 4. Stable promotion failure: inspect `.github/workflows/promote-release.yml` `validate` job first (version/tag checks), then `publish` and `docker`.
 5. Dependency update noise: inspect `.github/dependabot.yml` grouping/schedule settings.
 

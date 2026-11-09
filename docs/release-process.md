@@ -2,7 +2,7 @@
 
 This runbook defines the maintainers' standard release flow for the workflows currently present in this repository.
 
-Last verified: **March 27, 2026**.
+Last verified: **November 9, 2026**.
 
 ## Release Goals
 
@@ -20,7 +20,7 @@ Release automation currently lives in:
 
 ### Beta release path
 
-- Trigger: every push to `main`.
+- Trigger: manual `workflow_dispatch` of `Beta Release`.
 - Output:
   - prerelease GitHub tag/version in form `v<cargo-version>-beta.<run-number>`
   - build artifacts (`tar.gz`) and `SHA256SUMS`
@@ -45,10 +45,10 @@ Release automation currently lives in:
 2. Confirm no known high-priority regressions are unresolved.
 3. Confirm the release matrix targets remain `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, and `aarch64-apple-darwin`.
 
-### 2) Beta verification (automatic)
+### 2) Beta verification (manual)
 
-1. Merge release-ready changes to `main`.
-2. Monitor `Beta Release` workflow run.
+1. Ensure main-push CI is green for the intended commit.
+2. Dispatch `Beta Release` when a prerelease is needed.
 3. Verify prerelease assets and Docker `beta` tag update.
 
 ### 3) Promote stable release (manual)
