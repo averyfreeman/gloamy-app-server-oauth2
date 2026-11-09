@@ -11,6 +11,7 @@ For event-by-event delivery behavior across PR and merge paths, see [`.github/wo
 - `.github/workflows/ci.yml` (`CI`)
   - Trigger: pushes to `main` and pull requests targeting `main`
   - Purpose: PRs run tests and the minimum-supported Rust check; PRs and main pushes build all three maintained host targets
+  - Apple Silicon target is cross-compiled with the macOS SDK on the macOS 15 Intel runner
   - Gate: this is the primary PR quality gate and main-push build gate
 
 ### Non-Blocking but Important
