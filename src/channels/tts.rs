@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 
 use crate::config::TtsConfig;
 use crate::util::truncate_with_ellipsis;
@@ -36,7 +36,7 @@ fn resolve_tts_api_key(config: &TtsConfig, api_key_override: Option<&str>) -> Re
         return Ok(value.to_string());
     }
 
-    if let Ok(value) = std::env::var("TTS_API_KEY") {
+    if let Ok(value) = crate::environment::var("TTS_API_KEY") {
         let trimmed = value.trim();
         if !trimmed.is_empty() {
             return Ok(trimmed.to_string());
@@ -48,7 +48,7 @@ fn resolve_tts_api_key(config: &TtsConfig, api_key_override: Option<&str>) -> Re
     }
 
     for env_name in ["OPENAI_API_KEY", "GROQ_API_KEY"] {
-        if let Ok(value) = std::env::var(env_name) {
+        if let Ok(value) = crate::environment::var(env_name) {
             let trimmed = value.trim();
             if !trimmed.is_empty() {
                 return Ok(trimmed.to_string());
@@ -56,7 +56,9 @@ fn resolve_tts_api_key(config: &TtsConfig, api_key_override: Option<&str>) -> Re
         }
     }
 
-    bail!("TTS API key is not set. Configure tts.api_key, config.api_key, TTS_API_KEY, OPENAI_API_KEY, or GROQ_API_KEY")
+    bail!(
+        "TTS API key is not set. Configure tts.api_key, config.api_key, TTS_API_KEY, OPENAI_API_KEY, or GROQ_API_KEY"
+    )
 }
 
 fn prepare_tts_input(text: &str, max_input_chars: usize) -> Result<String> {
@@ -182,13 +184,10 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn synthesize_speech_rejects_missing_api_key() {
-        // SAFETY: env::remove_var is unsound in multi-threaded programs;
-        // current_thread runtime ensures single-threaded execution here.
-        unsafe {
-            std::env::remove_var("TTS_API_KEY");
-            std::env::remove_var("OPENAI_API_KEY");
-            std::env::remove_var("GROQ_API_KEY");
-        }
+        let _tts_key_override = crate::environment::test::scoped_remove_var("TTS_API_KEY");
+        let _openai_key_override =
+            crate::environment::test::scoped_remove_var("OPENAI_API_KEY");
+        let _groq_key_override = crate::environment::test::scoped_remove_var("GROQ_API_KEY");
 
         let error = synthesize_speech("hello", &TtsConfig::default(), None)
             .await

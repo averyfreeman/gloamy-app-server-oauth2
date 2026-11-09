@@ -55,6 +55,7 @@ impl AwsCredentials {
     /// Fetch credentials from EC2 IMDSv2 instance metadata service.
     async fn from_imds() -> anyhow::Result<Self> {
         let client = reqwest::Client::builder()
+            .no_proxy()
             .timeout(std::time::Duration::from_secs(3))
             .build()?;
 
@@ -146,7 +147,7 @@ impl AwsCredentials {
 }
 
 fn env_required(name: &str) -> anyhow::Result<String> {
-    std::env::var(name)
+    crate::environment::var(name)
         .ok()
         .map(|v| v.trim().to_string())
         .filter(|v| !v.is_empty())
@@ -154,7 +155,7 @@ fn env_required(name: &str) -> anyhow::Result<String> {
 }
 
 fn env_optional(name: &str) -> Option<String> {
-    std::env::var(name)
+    crate::environment::var(name)
         .ok()
         .map(|v| v.trim().to_string())
         .filter(|v| !v.is_empty())

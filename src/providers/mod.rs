@@ -257,7 +257,7 @@ impl std::fmt::Debug for QwenOauthProviderContext {
 }
 
 fn read_non_empty_env(name: &str) -> Option<String> {
-    std::env::var(name)
+    crate::environment::var(name)
         .ok()
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
@@ -297,9 +297,9 @@ fn qwen_oauth_client_id() -> String {
 }
 
 fn qwen_oauth_credentials_file_path() -> Option<PathBuf> {
-    std::env::var_os("HOME")
+    crate::environment::var_os("HOME")
         .map(PathBuf::from)
-        .or_else(|| std::env::var_os("USERPROFILE").map(PathBuf::from))
+        .or_else(|| crate::environment::var_os("USERPROFILE").map(PathBuf::from))
         .map(|home| home.join(QWEN_OAUTH_CREDENTIAL_FILE))
 }
 
@@ -354,11 +354,17 @@ fn qwen_oauth_token_expired(credentials: &QwenOauthCredentials) -> bool {
 
 fn refresh_qwen_oauth_access_token(refresh_token: &str) -> anyhow::Result<QwenOauthCredentials> {
     let client_id = qwen_oauth_client_id();
-    let client = reqwest::blocking::Client::builder()
+    let builder = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
-        .connect_timeout(std::time::Duration::from_secs(5))
+        .connect_timeout(std::time::Duration::from_secs(5));
+    let client = crate::config::apply_runtime_proxy_to_blocking_builder(builder, "provider.qwen")
         .build()
-        .unwrap_or_else(|_| reqwest::blocking::Client::new());
+        .unwrap_or_else(|_| {
+            reqwest::blocking::Client::builder()
+                .no_proxy()
+                .build()
+                .unwrap_or_else(|_| reqwest::blocking::Client::new())
+        });
 
     let response = client
         .post(QWEN_OAUTH_TOKEN_ENDPOINT)
@@ -526,11 +532,18 @@ fn refresh_minimax_oauth_access_token(name: &str, refresh_token: &str) -> anyhow
     let region = minimax_oauth_region(name);
     let endpoint = region.token_endpoint();
     let client_id = minimax_oauth_client_id();
-    let client = reqwest::blocking::Client::builder()
+    let builder = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
-        .connect_timeout(std::time::Duration::from_secs(5))
-        .build()
-        .unwrap_or_else(|_| reqwest::blocking::Client::new());
+        .connect_timeout(std::time::Duration::from_secs(5));
+    let client =
+        crate::config::apply_runtime_proxy_to_blocking_builder(builder, "provider.minimax")
+            .build()
+            .unwrap_or_else(|_| {
+                reqwest::blocking::Client::builder()
+                    .no_proxy()
+                    .build()
+                    .unwrap_or_else(|_| reqwest::blocking::Client::new())
+            });
 
     let response = client
         .post(endpoint)
@@ -853,7 +866,7 @@ fn resolve_provider_credential(name: &str, credential_override: Option<&str>) ->
     };
 
     for env_var in provider_env_candidates {
-        if let Ok(value) = std::env::var(env_var) {
+        if let Ok(value) = crate::environment::var(env_var) {
             let value = value.trim();
             if !value.is_empty() {
                 return Some(value.to_string());
@@ -872,7 +885,7 @@ fn resolve_provider_credential(name: &str, credential_override: Option<&str>) ->
     }
 
     for env_var in ["GLOAMY_API_KEY", "API_KEY"] {
-        if let Ok(value) = std::env::var(env_var) {
+        if let Ok(value) = crate::environment::var(env_var) {
             let value = value.trim();
             if !value.is_empty() {
                 return Some(value.to_string());
@@ -1005,7 +1018,9 @@ fn create_provider_with_url_and_options(
         // ── Primary providers (custom implementations) ───────
         "openrouter" => Ok(Box::new(openrouter::OpenRouterProvider::new(key))),
         "anthropic" => Ok(Box::new(anthropic::AnthropicProvider::new(key))),
-        "openai" => Ok(Box::new(openai::OpenAiProvider::with_base_url(api_url, key))),
+        "openai" => Ok(Box::new(openai::OpenAiProvider::with_base_url(
+            api_url, key,
+        ))),
         // Ollama uses api_url for custom base URL (e.g. remote Ollama instance)
         "ollama" => Ok(Box::new(ollama::OllamaProvider::new_with_reasoning(
             api_url,
@@ -1013,15 +1028,12 @@ fn create_provider_with_url_and_options(
             options.reasoning_enabled,
         ))),
         "gemini" | "google" | "google-gemini" => {
-            let state_dir = options
-                .gloamy_dir
-                .clone()
-                .unwrap_or_else(|| {
-                    directories::UserDirs::new().map_or_else(
-                        || PathBuf::from(".gloamy"),
-                        |dirs| dirs.home_dir().join(".gloamy"),
-                    )
-                });
+            let state_dir = options.gloamy_dir.clone().unwrap_or_else(|| {
+                directories::UserDirs::new().map_or_else(
+                    || PathBuf::from(".gloamy"),
+                    |dirs| dirs.home_dir().join(".gloamy"),
+                )
+            });
             let auth_service = AuthService::new(&state_dir, options.secrets_encrypt);
             Ok(Box::new(gemini::GeminiProvider::new_with_auth(
                 key,
@@ -1033,7 +1045,10 @@ fn create_provider_with_url_and_options(
 
         // ── OpenAI-compatible providers ──────────────────────
         "venice" => Ok(Box::new(OpenAiCompatibleProvider::new(
-            "Venice", "https://api.venice.ai", key, AuthStyle::Bearer,
+            "Venice",
+            "https://api.venice.ai",
+            key,
+            AuthStyle::Bearer,
         ))),
         "vercel" | "vercel-ai" => Ok(Box::new(OpenAiCompatibleProvider::new(
             "Vercel AI Gateway",
@@ -1053,20 +1068,26 @@ fn create_provider_with_url_and_options(
             key,
             AuthStyle::Bearer,
         ))),
-        "kimi-code" | "kimi_coding" | "kimi_for_coding" => Ok(Box::new(
-            OpenAiCompatibleProvider::new_with_user_agent(
+        "kimi-code" | "kimi_coding" | "kimi_for_coding" => {
+            Ok(Box::new(OpenAiCompatibleProvider::new_with_user_agent(
                 "Kimi Code",
                 "https://api.kimi.com/coding/v1",
                 key,
                 AuthStyle::Bearer,
                 "KimiCLI/0.77",
-            ),
-        )),
+            )))
+        }
         "synthetic" => Ok(Box::new(OpenAiCompatibleProvider::new(
-            "Synthetic", "https://api.synthetic.new/openai/v1", key, AuthStyle::Bearer,
+            "Synthetic",
+            "https://api.synthetic.new/openai/v1",
+            key,
+            AuthStyle::Bearer,
         ))),
         "opencode" | "opencode-zen" => Ok(Box::new(OpenAiCompatibleProvider::new(
-            "OpenCode Zen", "https://opencode.ai/zen/v1", key, AuthStyle::Bearer,
+            "OpenCode Zen",
+            "https://opencode.ai/zen/v1",
+            key,
+            AuthStyle::Bearer,
         ))),
         name if zai_base_url(name).is_some() => Ok(Box::new(OpenAiCompatibleProvider::new(
             "Z.AI",
@@ -1074,21 +1095,21 @@ fn create_provider_with_url_and_options(
             key,
             AuthStyle::Bearer,
         ))),
-        name if glm_base_url(name).is_some() => {
-            Ok(Box::new(OpenAiCompatibleProvider::new_no_responses_fallback(
+        name if glm_base_url(name).is_some() => Ok(Box::new(
+            OpenAiCompatibleProvider::new_no_responses_fallback(
                 "GLM",
                 glm_base_url(name).expect("checked in guard"),
                 key,
                 AuthStyle::Bearer,
-            )))
-        }
+            ),
+        )),
         name if minimax_base_url(name).is_some() => Ok(Box::new(
             OpenAiCompatibleProvider::new_merge_system_into_user(
                 "MiniMax",
                 minimax_base_url(name).expect("checked in guard"),
                 key,
                 AuthStyle::Bearer,
-            )
+            ),
         )),
         "bedrock" | "aws-bedrock" => Ok(Box::new(bedrock::BedrockProvider::new())),
         name if is_qwen_oauth_alias(name) => {
@@ -1096,21 +1117,29 @@ fn create_provider_with_url_and_options(
                 .map(str::trim)
                 .filter(|value| !value.is_empty())
                 .map(ToString::to_string)
-                .or_else(|| qwen_oauth_context.as_ref().and_then(|context| context.base_url.clone()))
+                .or_else(|| {
+                    qwen_oauth_context
+                        .as_ref()
+                        .and_then(|context| context.base_url.clone())
+                })
                 .unwrap_or_else(|| QWEN_OAUTH_BASE_FALLBACK_URL.to_string());
 
             Ok(Box::new(
                 OpenAiCompatibleProvider::new_with_user_agent_and_vision(
-                "Qwen Code",
-                &base_url,
-                key,
-                AuthStyle::Bearer,
-                "QwenCode/1.0",
-                true,
-            )))
+                    "Qwen Code",
+                    &base_url,
+                    key,
+                    AuthStyle::Bearer,
+                    "QwenCode/1.0",
+                    true,
+                ),
+            ))
         }
         name if is_qianfan_alias(name) => Ok(Box::new(OpenAiCompatibleProvider::new(
-            "Qianfan", "https://aip.baidubce.com", key, AuthStyle::Bearer,
+            "Qianfan",
+            "https://aip.baidubce.com",
+            key,
+            AuthStyle::Bearer,
         ))),
         name if is_doubao_alias(name) => Ok(Box::new(OpenAiCompatibleProvider::new(
             "Doubao",
@@ -1118,41 +1147,70 @@ fn create_provider_with_url_and_options(
             key,
             AuthStyle::Bearer,
         ))),
-        name if qwen_base_url(name).is_some() => Ok(Box::new(OpenAiCompatibleProvider::new_with_vision(
-            "Qwen",
-            qwen_base_url(name).expect("checked in guard"),
-            key,
-            AuthStyle::Bearer,
-            true,
-        ))),
+        name if qwen_base_url(name).is_some() => {
+            Ok(Box::new(OpenAiCompatibleProvider::new_with_vision(
+                "Qwen",
+                qwen_base_url(name).expect("checked in guard"),
+                key,
+                AuthStyle::Bearer,
+                true,
+            )))
+        }
 
         // ── Extended ecosystem (community favorites) ─────────
         "groq" => Ok(Box::new(OpenAiCompatibleProvider::new(
-            "Groq", "https://api.groq.com/openai/v1", key, AuthStyle::Bearer,
+            "Groq",
+            "https://api.groq.com/openai/v1",
+            key,
+            AuthStyle::Bearer,
         ))),
         "mistral" => Ok(Box::new(OpenAiCompatibleProvider::new(
-            "Mistral", "https://api.mistral.ai/v1", key, AuthStyle::Bearer,
+            "Mistral",
+            "https://api.mistral.ai/v1",
+            key,
+            AuthStyle::Bearer,
         ))),
         "xai" | "grok" => Ok(Box::new(OpenAiCompatibleProvider::new(
-            "xAI", "https://api.x.ai", key, AuthStyle::Bearer,
+            "xAI",
+            "https://api.x.ai",
+            key,
+            AuthStyle::Bearer,
         ))),
         "deepseek" => Ok(Box::new(OpenAiCompatibleProvider::new(
-            "DeepSeek", "https://api.deepseek.com", key, AuthStyle::Bearer,
+            "DeepSeek",
+            "https://api.deepseek.com",
+            key,
+            AuthStyle::Bearer,
         ))),
         "together" | "together-ai" => Ok(Box::new(OpenAiCompatibleProvider::new(
-            "Together AI", "https://api.together.xyz", key, AuthStyle::Bearer,
+            "Together AI",
+            "https://api.together.xyz",
+            key,
+            AuthStyle::Bearer,
         ))),
         "fireworks" | "fireworks-ai" => Ok(Box::new(OpenAiCompatibleProvider::new(
-            "Fireworks AI", "https://api.fireworks.ai/inference/v1", key, AuthStyle::Bearer,
+            "Fireworks AI",
+            "https://api.fireworks.ai/inference/v1",
+            key,
+            AuthStyle::Bearer,
         ))),
         "novita" => Ok(Box::new(OpenAiCompatibleProvider::new(
-            "Novita AI", "https://api.novita.ai/openai", key, AuthStyle::Bearer,
+            "Novita AI",
+            "https://api.novita.ai/openai",
+            key,
+            AuthStyle::Bearer,
         ))),
         "perplexity" => Ok(Box::new(OpenAiCompatibleProvider::new(
-            "Perplexity", "https://api.perplexity.ai", key, AuthStyle::Bearer,
+            "Perplexity",
+            "https://api.perplexity.ai",
+            key,
+            AuthStyle::Bearer,
         ))),
         "cohere" => Ok(Box::new(OpenAiCompatibleProvider::new(
-            "Cohere", "https://api.cohere.com/compatibility", key, AuthStyle::Bearer,
+            "Cohere",
+            "https://api.cohere.com/compatibility",
+            key,
+            AuthStyle::Bearer,
         ))),
         "copilot" | "github-copilot" => Ok(Box::new(copilot::CopilotProvider::new(key))),
         "lmstudio" | "lm-studio" => {
@@ -1234,7 +1292,10 @@ fn create_provider_with_url_and_options(
 
         // ── AI inference routers ─────────────────────────────
         "astrai" => Ok(Box::new(OpenAiCompatibleProvider::new(
-            "Astrai", "https://as-trai.com/v1", key, AuthStyle::Bearer,
+            "Astrai",
+            "https://as-trai.com/v1",
+            key,
+            AuthStyle::Bearer,
         ))),
 
         // ── Cloud AI endpoints ───────────────────────────────
@@ -1761,10 +1822,10 @@ mod tests {
 
     impl EnvGuard {
         fn set(key: &'static str, value: Option<&str>) -> Self {
-            let original = std::env::var(key).ok();
+            let original = crate::environment::var(key).ok();
             match value {
-                Some(next) => std::env::set_var(key, next),
-                None => std::env::remove_var(key),
+                Some(next) => crate::environment::test::set_var(key, next),
+                None => crate::environment::test::remove_var(key),
             }
 
             Self { key, original }
@@ -1774,9 +1835,9 @@ mod tests {
     impl Drop for EnvGuard {
         fn drop(&mut self) {
             if let Some(original) = self.original.as_deref() {
-                std::env::set_var(self.key, original);
+                crate::environment::test::set_var(self.key, original);
             } else {
-                std::env::remove_var(self.key);
+                crate::environment::test::remove_var(self.key);
             }
         }
     }
@@ -1886,8 +1947,9 @@ mod tests {
     #[test]
     fn resolve_qwen_oauth_context_reads_cached_credentials_file() {
         let _env_lock = env_lock();
-        let fake_home = format!("/tmp/gloamy-qwen-oauth-home-{}-file", std::process::id());
-        let creds_dir = PathBuf::from(&fake_home).join(".qwen");
+        let fake_home = tempfile::tempdir().unwrap();
+        let fake_home_path = fake_home.path().to_str().unwrap();
+        let creds_dir = fake_home.path().join(".qwen");
         std::fs::create_dir_all(&creds_dir).unwrap();
         let creds_path = creds_dir.join("oauth_creds.json");
         std::fs::write(
@@ -1896,7 +1958,7 @@ mod tests {
         )
         .unwrap();
 
-        let _home_guard = EnvGuard::set("HOME", Some(fake_home.as_str()));
+        let _home_guard = EnvGuard::set("HOME", Some(fake_home_path));
         let _token_guard = EnvGuard::set(QWEN_OAUTH_TOKEN_ENV, None);
         let _refresh_guard = EnvGuard::set(QWEN_OAUTH_REFRESH_TOKEN_ENV, None);
         let _resource_guard = EnvGuard::set(QWEN_OAUTH_RESOURCE_URL_ENV, None);

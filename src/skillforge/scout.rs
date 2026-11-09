@@ -91,9 +91,10 @@ impl GitHubScout {
             }
         }
 
-        let client = reqwest::Client::builder()
+        let builder = reqwest::Client::builder()
             .default_headers(headers)
-            .timeout(Duration::from_secs(30))
+            .timeout(Duration::from_secs(30));
+        let client = crate::config::apply_runtime_proxy_to_builder(builder, "tool.skillforge")
             .build()
             .expect("failed to build reqwest client");
 

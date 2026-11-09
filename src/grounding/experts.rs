@@ -74,7 +74,7 @@ impl RuntimeContextGroundingExpert {
     fn infer_runtime_app_name() -> String {
         #[cfg(target_os = "macos")]
         {
-            if let Ok(value) = std::env::var("TERM_PROGRAM") {
+            if let Ok(value) = crate::environment::var("TERM_PROGRAM") {
                 let trimmed = value.trim();
                 if !trimmed.is_empty() {
                     return trimmed.to_string();
@@ -85,13 +85,13 @@ impl RuntimeContextGroundingExpert {
 
         #[cfg(target_os = "linux")]
         {
-            if let Ok(value) = std::env::var("TERM_PROGRAM") {
+            if let Ok(value) = crate::environment::var("TERM_PROGRAM") {
                 let trimmed = value.trim();
                 if !trimmed.is_empty() {
                     return trimmed.to_string();
                 }
             }
-            if let Ok(value) = std::env::var("TERM") {
+            if let Ok(value) = crate::environment::var("TERM") {
                 let trimmed = value.trim();
                 if !trimmed.is_empty() {
                     return trimmed.to_string();
@@ -102,7 +102,7 @@ impl RuntimeContextGroundingExpert {
 
         #[cfg(not(any(target_os = "macos", target_os = "linux")))]
         {
-            if let Ok(value) = std::env::var("TERM_PROGRAM") {
+            if let Ok(value) = crate::environment::var("TERM_PROGRAM") {
                 let trimmed = value.trim();
                 if !trimmed.is_empty() {
                     return trimmed.to_string();

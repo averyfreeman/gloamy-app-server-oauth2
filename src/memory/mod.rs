@@ -20,8 +20,8 @@ pub mod vector;
 use crate::config::{EmbeddingRouteConfig, MemoryConfig, StorageProviderConfig};
 use anyhow::Context;
 pub use backend::{
-    classify_memory_backend, default_memory_backend_key, memory_backend_profile,
-    selectable_memory_backends, MemoryBackendKind, MemoryBackendProfile,
+    MemoryBackendKind, MemoryBackendProfile, classify_memory_backend, default_memory_backend_key,
+    memory_backend_profile, selectable_memory_backends,
 };
 pub use lucid::LucidMemory;
 pub use markdown::MarkdownMemory;
@@ -303,12 +303,12 @@ pub fn create_memory_with_storage_and_routes(
             .url
             .clone()
             .filter(|s| !s.trim().is_empty())
-            .or_else(|| std::env::var("QDRANT_URL").ok())
+            .or_else(|| crate::environment::var("QDRANT_URL").ok())
             .filter(|s| !s.trim().is_empty())
             .context(
                 "Qdrant memory backend requires url in [memory.qdrant] or QDRANT_URL env var",
             )?;
-        let collection = std::env::var("QDRANT_COLLECTION")
+        let collection = crate::environment::var("QDRANT_COLLECTION")
             .ok()
             .filter(|s| !s.trim().is_empty())
             .unwrap_or_else(|| config.qdrant.collection.clone());
@@ -316,7 +316,7 @@ pub fn create_memory_with_storage_and_routes(
             .qdrant
             .api_key
             .clone()
-            .or_else(|| std::env::var("QDRANT_API_KEY").ok())
+            .or_else(|| crate::environment::var("QDRANT_API_KEY").ok())
             .filter(|s| !s.trim().is_empty());
         let embedder: Arc<dyn embeddings::EmbeddingProvider> =
             Arc::from(embeddings::create_embedding_provider(

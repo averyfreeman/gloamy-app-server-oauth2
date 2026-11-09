@@ -59,13 +59,13 @@
     dead_code
 )]
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 use dialoguer::{Input, Password};
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 use tracing::{info, warn};
-use tracing_subscriber::{fmt, EnvFilter};
+use tracing_subscriber::{EnvFilter, fmt};
 
 fn parse_temperature(s: &str) -> std::result::Result<f64, String> {
     let t: f64 = s.parse().map_err(|e| format!("{e}"))?;
@@ -85,6 +85,7 @@ mod cost;
 mod cron;
 mod daemon;
 mod doctor;
+mod environment;
 mod gateway;
 mod grounding;
 mod health;
@@ -213,7 +214,6 @@ Examples:
         /// Temperature (0.0 - 2.0)
         #[arg(short, long, default_value = "0.7", value_parser = parse_temperature)]
         temperature: f64,
-
     },
 
     /// Start the gateway server
@@ -694,7 +694,7 @@ async fn main() -> Result<()> {
         if config_dir.trim().is_empty() {
             bail!("--config-dir cannot be empty");
         }
-        std::env::set_var("GLOAMY_CONFIG_DIR", config_dir);
+        environment::set_config_dir_override(Some(std::ffi::OsStr::new(config_dir)));
     }
 
     // Completions must remain stdout-only and should not load config or initialize logging.
@@ -747,10 +747,10 @@ async fn main() -> Result<()> {
         if channels_only && force {
             bail!("--channels-only does not accept --force");
         }
-        let config = if channels_only {
-            onboard::run_channels_repair_wizard().await
+        let outcome = if channels_only {
+            onboard::run_channels_repair_wizard_with_outcome().await
         } else if interactive {
-            onboard::run_wizard(force).await
+            onboard::run_wizard_with_outcome(force).await
         } else {
             onboard::run_quick_setup(
                 api_key.as_deref(),
@@ -760,9 +760,13 @@ async fn main() -> Result<()> {
                 force,
             )
             .await
+            .map(|config| onboard::OnboardingOutcome {
+                config,
+                start_channels: false,
+            })
         }?;
         // Auto-start channels if user said yes during wizard
-        if std::env::var("GLOAMY_AUTOSTART_CHANNELS").as_deref() == Ok("1") {
+        if let Some(config) = outcome.channels_to_start() {
             channels::start_channels(config).await?;
         }
         return Ok(());
@@ -798,16 +802,9 @@ async fn main() -> Result<()> {
             temperature,
         } => {
             tools::browser_services::ensure_started(&config.browser).await;
-            agent::run(
-                config,
-                message,
-                provider,
-                model,
-                temperature,
-                true,
-            )
-            .await
-            .map(|_| ())
+            agent::run(config, message, provider, model, temperature, true)
+                .await
+                .map(|_| ())
         }
 
         Commands::Gateway { port, host } => {
@@ -1427,7 +1424,7 @@ async fn handle_auth_command(auth_command: AuthCommands, config: &Config) -> Res
             device_code,
         } => {
             let provider = auth::normalize_provider(&provider)?;
-            let client = reqwest::Client::new();
+            let client = crate::config::build_runtime_proxy_client("provider.auth");
 
             match provider.as_str() {
                 "gemini" => {
@@ -1680,7 +1677,7 @@ async fn handle_auth_command(auth_command: AuthCommands, config: &Config) -> Res
                         state: pending.state.clone(),
                     };
 
-                    let client = reqwest::Client::new();
+                    let client = crate::config::build_runtime_proxy_client("provider.auth");
                     let token_set =
                         auth::openai_oauth::exchange_code_for_tokens(&client, &code, &pkce).await?;
                     let account_id = extract_openai_account_id_for_profile(&token_set.access_token);
@@ -1724,7 +1721,7 @@ async fn handle_auth_command(auth_command: AuthCommands, config: &Config) -> Res
                         state: pending.state.clone(),
                     };
 
-                    let client = reqwest::Client::new();
+                    let client = crate::config::build_runtime_proxy_client("provider.auth");
                     let token_set =
                         auth::gemini_oauth::exchange_code_for_tokens(&client, &code, &pkce).await?;
                     let account_id = token_set
@@ -1755,7 +1752,9 @@ async fn handle_auth_command(auth_command: AuthCommands, config: &Config) -> Res
         } => {
             let provider = auth::normalize_provider(&provider)?;
             if provider == "codex-app-server" {
-                bail!("Codex App Server manages its credentials through the Codex CLI; use `gloamy auth login --provider codex-app-server`");
+                bail!(
+                    "Codex App Server manages its credentials through the Codex CLI; use `gloamy auth login --provider codex-app-server`"
+                );
             }
             let token = match token {
                 Some(token) => token.trim().to_string(),
@@ -1783,7 +1782,9 @@ async fn handle_auth_command(auth_command: AuthCommands, config: &Config) -> Res
         AuthCommands::SetupToken { provider, profile } => {
             let provider = auth::normalize_provider(&provider)?;
             if provider == "codex-app-server" {
-                bail!("Codex App Server manages its credentials through the Codex CLI; use `gloamy auth login --provider codex-app-server`");
+                bail!(
+                    "Codex App Server manages its credentials through the Codex CLI; use `gloamy auth login --provider codex-app-server`"
+                );
             }
             let token = read_auth_input("Paste token")?;
             if token.is_empty() {
@@ -1827,7 +1828,9 @@ async fn handle_auth_command(auth_command: AuthCommands, config: &Config) -> Res
                 }
                 "codex-app-server" => {
                     if profile.as_deref().is_some_and(|name| name != "default") {
-                        bail!("Codex App Server has one Codex CLI account and does not support Gloamy auth profiles");
+                        bail!(
+                            "Codex App Server has one Codex CLI account and does not support Gloamy auth profiles"
+                        );
                     }
                     let mut app_server = codex_app_server::CodexAppServerClient::connect().await?;
                     app_server.refresh_account().await?;
@@ -1862,7 +1865,9 @@ async fn handle_auth_command(auth_command: AuthCommands, config: &Config) -> Res
             let provider = auth::normalize_provider(&provider)?;
             if provider == "codex-app-server" {
                 if profile != "default" {
-                    bail!("Codex App Server has one Codex CLI account and does not support Gloamy auth profiles");
+                    bail!(
+                        "Codex App Server has one Codex CLI account and does not support Gloamy auth profiles"
+                    );
                 }
                 let mut app_server = codex_app_server::CodexAppServerClient::connect().await?;
                 app_server.logout().await?;
@@ -1881,7 +1886,9 @@ async fn handle_auth_command(auth_command: AuthCommands, config: &Config) -> Res
         AuthCommands::Use { provider, profile } => {
             let provider = auth::normalize_provider(&provider)?;
             if provider == "codex-app-server" {
-                bail!("Codex App Server uses the account selected by the Codex CLI and does not support Gloamy auth profiles");
+                bail!(
+                    "Codex App Server uses the account selected by the Codex CLI and does not support Gloamy auth profiles"
+                );
             }
             auth_service.set_active_profile(&provider, &profile).await?;
             println!("Active profile for {provider}: {profile}");

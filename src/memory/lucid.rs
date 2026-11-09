@@ -32,10 +32,10 @@ impl LucidMemory {
     const DEFAULT_FAILURE_COOLDOWN_MS: u64 = 15_000;
 
     pub fn new(workspace_dir: &Path, local: SqliteMemory) -> Self {
-        let lucid_cmd = std::env::var("GLOAMY_LUCID_CMD")
+        let lucid_cmd = crate::environment::var("GLOAMY_LUCID_CMD")
             .unwrap_or_else(|_| Self::DEFAULT_LUCID_CMD.to_string());
 
-        let token_budget = std::env::var("GLOAMY_LUCID_BUDGET")
+        let token_budget = crate::environment::var("GLOAMY_LUCID_BUDGET")
             .ok()
             .and_then(|v| v.parse::<usize>().ok())
             .filter(|v| *v > 0)
@@ -101,14 +101,14 @@ impl LucidMemory {
     }
 
     fn read_env_usize(name: &str, default: usize, min: usize) -> usize {
-        std::env::var(name)
+        crate::environment::var(name)
             .ok()
             .and_then(|v| v.parse::<usize>().ok())
             .map_or(default, |v| v.max(min))
     }
 
     fn read_env_duration_ms(name: &str, default_ms: u64, min_ms: u64) -> Duration {
-        let millis = std::env::var(name)
+        let millis = crate::environment::var(name)
             .ok()
             .and_then(|v| v.parse::<u64>().ok())
             .map_or(default_ms, |v| v.max(min_ms));
@@ -545,9 +545,11 @@ exit 1
 
         let entries = memory.recall("auth", 5, None).await.unwrap();
 
-        assert!(entries
-            .iter()
-            .any(|e| e.content.contains("Local sqlite auth fallback note")));
+        assert!(
+            entries
+                .iter()
+                .any(|e| e.content.contains("Local sqlite auth fallback note"))
+        );
         assert!(entries.iter().any(|e| e.content.contains("token refresh")));
     }
 
@@ -569,12 +571,16 @@ exit 1
 
         let entries = memory.recall("auth", 5, None).await.unwrap();
 
-        assert!(entries
-            .iter()
-            .any(|e| e.content.contains("Local sqlite auth fallback note")));
-        assert!(entries
-            .iter()
-            .any(|e| e.content.contains("Delayed token refresh guidance")));
+        assert!(
+            entries
+                .iter()
+                .any(|e| e.content.contains("Local sqlite auth fallback note"))
+        );
+        assert!(
+            entries
+                .iter()
+                .any(|e| e.content.contains("Delayed token refresh guidance"))
+        );
     }
 
     #[tokio::test]
@@ -606,9 +612,11 @@ exit 1
             .unwrap();
 
         let entries = memory.recall("rust", 5, None).await.unwrap();
-        assert!(entries
-            .iter()
-            .any(|e| e.content.contains("Rust should stay local-first")));
+        assert!(
+            entries
+                .iter()
+                .any(|e| e.content.contains("Rust should stay local-first"))
+        );
 
         let context_calls = tokio::fs::read_to_string(&marker).await.unwrap_or_default();
         assert!(

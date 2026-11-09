@@ -305,11 +305,17 @@ fn refresh_gemini_cli_token(
     client_id: Option<&str>,
     client_secret: Option<&str>,
 ) -> anyhow::Result<RefreshedToken> {
-    let client = reqwest::blocking::Client::builder()
+    let builder = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
-        .connect_timeout(std::time::Duration::from_secs(5))
+        .connect_timeout(std::time::Duration::from_secs(5));
+    let client = crate::config::apply_runtime_proxy_to_blocking_builder(builder, "provider.gemini")
         .build()
-        .unwrap_or_else(|_| reqwest::blocking::Client::new());
+        .unwrap_or_else(|_| {
+            reqwest::blocking::Client::builder()
+                .no_proxy()
+                .build()
+                .unwrap_or_else(|_| reqwest::blocking::Client::new())
+        });
 
     let form = build_oauth_refresh_form(refresh_token, client_id, client_secret);
 
@@ -535,7 +541,7 @@ impl GeminiProvider {
     }
 
     fn load_non_empty_env(name: &str) -> Option<String> {
-        std::env::var(name)
+        crate::environment::var(name)
             .ok()
             .and_then(|value| Self::normalize_non_empty(&value))
     }
@@ -1327,7 +1333,7 @@ impl Provider for GeminiProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use reqwest::{header::AUTHORIZATION, StatusCode};
+    use reqwest::{StatusCode, header::AUTHORIZATION};
 
     /// Helper to create a test OAuth auth variant.
     fn test_oauth_auth(token: &str) -> GeminiAuth {
@@ -2125,10 +2131,12 @@ mod tests {
 
         let result = provider.warmup().await;
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("ManagedOAuth requires auth_service"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("ManagedOAuth requires auth_service")
+        );
     }
 
     /// Validates that warmup() for CLI OAuth skips validation (existing behavior).

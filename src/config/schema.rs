@@ -16,6 +16,7 @@ use tokio::io::AsyncWriteExt;
 
 const SUPPORTED_PROXY_SERVICE_KEYS: &[&str] = &[
     "provider.anthropic",
+    "provider.auth",
     "provider.compatible",
     "provider.copilot",
     "provider.gemini",
@@ -23,10 +24,13 @@ const SUPPORTED_PROXY_SERVICE_KEYS: &[&str] = &[
     "provider.ollama",
     "provider.openai",
     "provider.openrouter",
+    "provider.telnyx",
+    "channel.clawdtalk",
     "channel.dingtalk",
     "channel.discord",
     "channel.feishu",
     "channel.lark",
+    "channel.linq",
     "channel.matrix",
     "channel.mattermost",
     "channel.nextcloud_talk",
@@ -41,6 +45,8 @@ const SUPPORTED_PROXY_SERVICE_KEYS: &[&str] = &[
     "tool.one",
     "tool.http_request",
     "tool.pushover",
+    "tool.skillforge",
+    "tool.web_search",
     "memory.embeddings",
     "tunnel.custom",
     "transcription.groq",
@@ -72,23 +78,6 @@ const DEFAULT_TELEGRAM_CONFIG_COMMENT_BLOCK: &str = r#"
 # mention_only = false
 "#;
 
-fn parse_env_value(raw: &str) -> String {
-    let raw = raw.trim();
-    let unquoted = if raw.len() >= 2
-        && ((raw.starts_with('"') && raw.ends_with('"'))
-            || (raw.starts_with('\'') && raw.ends_with('\'')))
-    {
-        &raw[1..raw.len() - 1]
-    } else {
-        raw
-    };
-
-    unquoted.split_once(" #").map_or_else(
-        || unquoted.trim().to_string(),
-        |(value, _)| value.trim().to_string(),
-    )
-}
-
 fn append_default_config_comment_blocks(config: &Config, toml_str: String) -> String {
     let mut rendered = toml_str;
 
@@ -102,37 +91,18 @@ fn append_default_config_comment_blocks(config: &Config, toml_str: String) -> St
     rendered
 }
 
-async fn load_env_file(path: &Path) -> Result<()> {
+async fn load_env_file(path: &Path) -> Result<HashMap<std::ffi::OsString, std::ffi::OsString>> {
     let contents = match fs::read_to_string(path).await {
         Ok(contents) => contents,
         Err(error) => {
             if error.kind() == io::ErrorKind::NotFound {
-                return Ok(());
+                return Ok(HashMap::new());
             }
             tracing::warn!(path = %path.display(), error = %error, "Failed to read .env file");
-            return Ok(());
+            return Ok(HashMap::new());
         }
     };
-
-    for line in contents.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-
-        let line = line.strip_prefix("export ").map(str::trim).unwrap_or(line);
-        if let Some((key, value)) = line.split_once('=') {
-            let key = key.trim();
-            if key.is_empty() {
-                continue;
-            }
-            if std::env::var_os(key).is_none() {
-                std::env::set_var(key, parse_env_value(value));
-            }
-        }
-    }
-
-    Ok(())
+    Ok(crate::environment::parse_dotenv(&contents))
 }
 
 // ── Top-level config ──────────────────────────────────────────────
@@ -1530,7 +1500,7 @@ impl Default for WebSearchConfig {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ProxyScope {
-    /// Use system environment proxy variables only.
+    /// Apply environment-sourced proxy settings through Gloamy's managed overlay.
     Environment,
     /// Apply proxy to all Gloamy-managed HTTP traffic (default).
     #[default]
@@ -1648,7 +1618,7 @@ impl ProxyConfig {
         }
 
         match self.scope {
-            ProxyScope::Environment => false,
+            ProxyScope::Environment => true,
             ProxyScope::Gloamy => true,
             ProxyScope::Services => {
                 let service_key = service_key.trim().to_ascii_lowercase();
@@ -1665,9 +1635,12 @@ impl ProxyConfig {
 
     pub fn apply_to_reqwest_builder(
         &self,
-        mut builder: reqwest::ClientBuilder,
+        builder: reqwest::ClientBuilder,
         service_key: &str,
     ) -> reqwest::ClientBuilder {
+        // Reqwest otherwise reads process proxy variables implicitly, bypassing
+        // Gloamy's scope and managed overlay rules.
+        let mut builder = builder.no_proxy();
         if !self.should_apply_to_service(service_key) {
             return builder;
         }
@@ -1722,23 +1695,50 @@ impl ProxyConfig {
         builder
     }
 
-    pub fn apply_to_process_env(&self) {
-        set_proxy_env_pair("HTTP_PROXY", self.http_proxy.as_deref());
-        set_proxy_env_pair("HTTPS_PROXY", self.https_proxy.as_deref());
-        set_proxy_env_pair("ALL_PROXY", self.all_proxy.as_deref());
+    pub fn apply_to_blocking_reqwest_builder(
+        &self,
+        mut builder: reqwest::blocking::ClientBuilder,
+        service_key: &str,
+    ) -> reqwest::blocking::ClientBuilder {
+        builder = builder.no_proxy();
+        if !self.should_apply_to_service(service_key) {
+            return builder;
+        }
 
+        let no_proxy = self.no_proxy_value();
+        if let Some(url) = normalize_proxy_url_option(self.all_proxy.as_deref()) {
+            if let Ok(proxy) = reqwest::Proxy::all(&url) {
+                builder = builder.proxy(apply_no_proxy(proxy, no_proxy.clone()));
+            }
+        }
+        if let Some(url) = normalize_proxy_url_option(self.http_proxy.as_deref()) {
+            if let Ok(proxy) = reqwest::Proxy::http(&url) {
+                builder = builder.proxy(apply_no_proxy(proxy, no_proxy.clone()));
+            }
+        }
+        if let Some(url) = normalize_proxy_url_option(self.https_proxy.as_deref()) {
+            if let Ok(proxy) = reqwest::Proxy::https(&url) {
+                builder = builder.proxy(apply_no_proxy(proxy, no_proxy));
+            }
+        }
+        builder
+    }
+
+    pub fn apply_to_environment_overlay(&self) {
         let no_proxy_joined = {
             let list = self.normalized_no_proxy();
             (!list.is_empty()).then(|| list.join(","))
         };
-        set_proxy_env_pair("NO_PROXY", no_proxy_joined.as_deref());
+        crate::environment::apply_proxy_overlay(&[
+            ("HTTP_PROXY".to_string(), self.http_proxy.clone()),
+            ("HTTPS_PROXY".to_string(), self.https_proxy.clone()),
+            ("ALL_PROXY".to_string(), self.all_proxy.clone()),
+            ("NO_PROXY".to_string(), no_proxy_joined),
+        ]);
     }
 
-    pub fn clear_process_env() {
-        clear_proxy_env_pair("HTTP_PROXY");
-        clear_proxy_env_pair("HTTPS_PROXY");
-        clear_proxy_env_pair("ALL_PROXY");
-        clear_proxy_env_pair("NO_PROXY");
+    pub fn clear_environment_overlay() {
+        crate::environment::clear_proxy_overlay();
     }
 
     fn no_proxy_value(&self) -> Option<reqwest::NoProxy> {
@@ -1837,22 +1837,6 @@ fn validate_proxy_url(field: &str, url: &str) -> Result<()> {
     Ok(())
 }
 
-fn set_proxy_env_pair(key: &str, value: Option<&str>) {
-    let lowercase_key = key.to_ascii_lowercase();
-    if let Some(value) = value.and_then(|candidate| normalize_proxy_url_option(Some(candidate))) {
-        std::env::set_var(key, &value);
-        std::env::set_var(lowercase_key, value);
-    } else {
-        std::env::remove_var(key);
-        std::env::remove_var(lowercase_key);
-    }
-}
-
-fn clear_proxy_env_pair(key: &str) {
-    std::env::remove_var(key);
-    std::env::remove_var(key.to_ascii_lowercase());
-}
-
 fn runtime_proxy_state() -> &'static RwLock<ProxyConfig> {
     RUNTIME_PROXY_CONFIG.get_or_init(|| RwLock::new(ProxyConfig::default()))
 }
@@ -1932,6 +1916,13 @@ pub fn apply_runtime_proxy_to_builder(
     service_key: &str,
 ) -> reqwest::ClientBuilder {
     runtime_proxy_config().apply_to_reqwest_builder(builder, service_key)
+}
+
+pub fn apply_runtime_proxy_to_blocking_builder(
+    builder: reqwest::blocking::ClientBuilder,
+    service_key: &str,
+) -> reqwest::blocking::ClientBuilder {
+    runtime_proxy_config().apply_to_blocking_reqwest_builder(builder, service_key)
 }
 
 pub fn build_runtime_proxy_client(service_key: &str) -> reqwest::Client {
@@ -3945,8 +3936,7 @@ pub fn default_nostr_relays() -> Vec<String> {
 
 impl Default for Config {
     fn default() -> Self {
-        let home =
-            UserDirs::new().map_or_else(|| PathBuf::from("."), |u| u.home_dir().to_path_buf());
+        let home = default_home_dir().unwrap_or_else(|| PathBuf::from("."));
         let gloamy_dir = home.join(".gloamy");
 
         Self {
@@ -4009,10 +3999,15 @@ struct ActiveWorkspaceState {
 }
 
 fn default_config_dir() -> Result<PathBuf> {
-    let home = UserDirs::new()
-        .map(|u| u.home_dir().to_path_buf())
-        .context("Could not find home directory")?;
+    let home = default_home_dir().context("Could not find home directory")?;
     Ok(home.join(".gloamy"))
+}
+
+fn default_home_dir() -> Option<PathBuf> {
+    crate::environment::var_os("HOME")
+        .or_else(|| crate::environment::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+        .or_else(|| UserDirs::new().map(|dirs| dirs.home_dir().to_path_buf()))
 }
 
 fn active_workspace_state_path(default_dir: &Path) -> PathBuf {
@@ -4203,7 +4198,16 @@ async fn resolve_runtime_config_dirs(
     default_gloamy_dir: &Path,
     default_workspace_dir: &Path,
 ) -> Result<(PathBuf, PathBuf, ConfigResolutionSource)> {
-    if let Ok(custom_config_dir) = std::env::var("GLOAMY_CONFIG_DIR") {
+    let environment = crate::environment::EnvironmentSource::from_process();
+    resolve_runtime_config_dirs_from(default_gloamy_dir, default_workspace_dir, &environment).await
+}
+
+async fn resolve_runtime_config_dirs_from(
+    default_gloamy_dir: &Path,
+    default_workspace_dir: &Path,
+    environment: &crate::environment::EnvironmentSource,
+) -> Result<(PathBuf, PathBuf, ConfigResolutionSource)> {
+    if let Ok(custom_config_dir) = environment.var("GLOAMY_CONFIG_DIR") {
         let custom_config_dir = custom_config_dir.trim();
         if !custom_config_dir.is_empty() {
             let gloamy_dir = PathBuf::from(custom_config_dir);
@@ -4215,7 +4219,7 @@ async fn resolve_runtime_config_dirs(
         }
     }
 
-    if let Ok(custom_workspace) = std::env::var("GLOAMY_WORKSPACE") {
+    if let Ok(custom_workspace) = environment.var("GLOAMY_WORKSPACE") {
         if !custom_workspace.is_empty() {
             let (gloamy_dir, workspace_dir) =
                 resolve_config_dir_for_workspace(&PathBuf::from(custom_workspace));
@@ -4334,7 +4338,7 @@ fn has_ollama_cloud_credential(config_api_key: Option<&str>) -> bool {
     ["OLLAMA_API_KEY", "GLOAMY_API_KEY", "API_KEY"]
         .iter()
         .any(|name| {
-            std::env::var(name)
+            crate::environment::var(name)
                 .ok()
                 .is_some_and(|value| !value.trim().is_empty())
         })
@@ -4351,7 +4355,7 @@ fn normalize_wire_api(raw: &str) -> Option<&'static str> {
 }
 
 fn read_codex_openai_api_key() -> Option<String> {
-    let home = UserDirs::new()?.home_dir().to_path_buf();
+    let home = default_home_dir()?;
     let auth_path = home.join(".codex").join("auth.json");
     let raw = std::fs::read_to_string(auth_path).ok()?;
     let parsed: serde_json::Value = serde_json::from_str(&raw).ok()?;
@@ -4367,9 +4371,14 @@ fn read_codex_openai_api_key() -> Option<String> {
 impl Config {
     pub async fn load_or_init() -> Result<Self> {
         let (default_gloamy_dir, default_workspace_dir) = default_config_and_workspace_dirs()?;
+        let process_environment = crate::environment::EnvironmentSource::from_process();
 
-        let (gloamy_dir, workspace_dir, resolution_source) =
-            resolve_runtime_config_dirs(&default_gloamy_dir, &default_workspace_dir).await?;
+        let (gloamy_dir, workspace_dir, resolution_source) = resolve_runtime_config_dirs_from(
+            &default_gloamy_dir,
+            &default_workspace_dir,
+            &process_environment,
+        )
+        .await?;
 
         let config_path = gloamy_dir.join("config.toml");
 
@@ -4380,7 +4389,8 @@ impl Config {
             .await
             .context("Failed to create workspace directory")?;
 
-        load_env_file(&workspace_dir.join(".env")).await?;
+        let dotenv = load_env_file(&workspace_dir.join(".env")).await?;
+        let environment = process_environment.clone().with_dotenv(dotenv.clone());
 
         if config_path.exists() {
             // Warn if config file is world-readable (may contain API keys)
@@ -4467,7 +4477,8 @@ impl Config {
                 )?;
             }
 
-            config.apply_env_overrides();
+            crate::environment::install_dotenv(dotenv);
+            config.apply_env_overrides_from(&environment);
             config.validate()?;
             tracing::info!(
                 path = %config.config_path.display(),
@@ -4490,7 +4501,8 @@ impl Config {
                 let _ = fs::set_permissions(&config_path, Permissions::from_mode(0o600)).await;
             }
 
-            config.apply_env_overrides();
+            crate::environment::install_dotenv(dotenv);
+            config.apply_env_overrides_from(&environment);
             config.validate()?;
             tracing::info!(
                 path = %config.config_path.display(),
@@ -4553,7 +4565,7 @@ impl Config {
                 .map(str::trim)
                 .is_none_or(|value| value.is_empty())
         {
-            let codex_key = std::env::var("OPENAI_API_KEY")
+            let codex_key = crate::environment::var("OPENAI_API_KEY")
                 .ok()
                 .map(|value| value.trim().to_string())
                 .filter(|value| !value.is_empty())
@@ -4639,9 +4651,9 @@ impl Config {
             &self.security.otp.gated_domains,
             &self.security.otp.gated_domain_categories,
         )
-        .with_context(|| {
-            "Invalid security.otp.gated_domains or security.otp.gated_domain_categories"
-        })?;
+        .with_context(
+            || "Invalid security.otp.gated_domains or security.otp.gated_domain_categories",
+        )?;
         if self.security.estop.state_file.trim().is_empty() {
             anyhow::bail!("security.estop.state_file must not be empty");
         }
@@ -4772,15 +4784,27 @@ impl Config {
 
     /// Apply environment variable overrides to config
     pub fn apply_env_overrides(&mut self) {
+        let environment = crate::environment::runtime_source();
+        self.apply_env_overrides_from(&environment);
+    }
+
+    /// Apply overrides from an explicit process-plus-dotenv snapshot.
+    pub fn apply_env_overrides_from(
+        &mut self,
+        environment: &crate::environment::EnvironmentSource,
+    ) {
         // API Key: GLOAMY_API_KEY or API_KEY (generic)
-        if let Ok(key) = std::env::var("GLOAMY_API_KEY").or_else(|_| std::env::var("API_KEY")) {
+        if let Ok(key) = environment
+            .var("GLOAMY_API_KEY")
+            .or_else(|_| environment.var("API_KEY"))
+        {
             if !key.is_empty() {
                 self.api_key = Some(key);
             }
         }
         // API Key: GLM_API_KEY overrides when provider is a GLM/Zhipu variant.
         if self.default_provider.as_deref().is_some_and(is_glm_alias) {
-            if let Ok(key) = std::env::var("GLM_API_KEY") {
+            if let Ok(key) = environment.var("GLM_API_KEY") {
                 if !key.is_empty() {
                     self.api_key = Some(key);
                 }
@@ -4789,7 +4813,7 @@ impl Config {
 
         // API Key: ZAI_API_KEY overrides when provider is a Z.AI variant.
         if self.default_provider.as_deref().is_some_and(is_zai_alias) {
-            if let Ok(key) = std::env::var("ZAI_API_KEY") {
+            if let Ok(key) = environment.var("ZAI_API_KEY") {
                 if !key.is_empty() {
                     self.api_key = Some(key);
                 }
@@ -4800,17 +4824,18 @@ impl Config {
         // 1) GLOAMY_PROVIDER always wins when set.
         // 2) GLOAMY_MODEL_PROVIDER/MODEL_PROVIDER (Codex app-server style).
         // 3) Legacy PROVIDER is honored only when config still uses default provider.
-        if let Ok(provider) = std::env::var("GLOAMY_PROVIDER") {
+        if let Ok(provider) = environment.var("GLOAMY_PROVIDER") {
             if !provider.is_empty() {
                 self.default_provider = Some(provider);
             }
-        } else if let Ok(provider) =
-            std::env::var("GLOAMY_MODEL_PROVIDER").or_else(|_| std::env::var("MODEL_PROVIDER"))
+        } else if let Ok(provider) = environment
+            .var("GLOAMY_MODEL_PROVIDER")
+            .or_else(|_| environment.var("MODEL_PROVIDER"))
         {
             if !provider.is_empty() {
                 self.default_provider = Some(provider);
             }
-        } else if let Ok(provider) = std::env::var("PROVIDER") {
+        } else if let Ok(provider) = environment.var("PROVIDER") {
             let should_apply_legacy_provider =
                 self.default_provider.as_deref().map_or(true, |configured| {
                     configured.trim().eq_ignore_ascii_case("openai")
@@ -4826,7 +4851,7 @@ impl Config {
             .as_deref()
             .is_some_and(|provider| provider.trim().eq_ignore_ascii_case("openrouter"))
         {
-            if let Ok(key) = std::env::var("OPENROUTER_API_KEY") {
+            if let Ok(key) = environment.var("OPENROUTER_API_KEY") {
                 if !key.is_empty() {
                     self.api_key = Some(key);
                 }
@@ -4834,7 +4859,10 @@ impl Config {
         }
 
         // Model: GLOAMY_MODEL or MODEL
-        if let Ok(model) = std::env::var("GLOAMY_MODEL").or_else(|_| std::env::var("MODEL")) {
+        if let Ok(model) = environment
+            .var("GLOAMY_MODEL")
+            .or_else(|_| environment.var("MODEL"))
+        {
             if !model.is_empty() {
                 self.default_model = Some(model);
             }
@@ -4844,7 +4872,7 @@ impl Config {
         self.apply_named_model_provider_profile();
 
         // Workspace directory: GLOAMY_WORKSPACE
-        if let Ok(workspace) = std::env::var("GLOAMY_WORKSPACE") {
+        if let Ok(workspace) = environment.var("GLOAMY_WORKSPACE") {
             if !workspace.is_empty() {
                 let (_, workspace_dir) =
                     resolve_config_dir_for_workspace(&PathBuf::from(workspace));
@@ -4853,7 +4881,7 @@ impl Config {
         }
 
         // Open-skills opt-in flag: GLOAMY_OPEN_SKILLS_ENABLED
-        if let Ok(flag) = std::env::var("GLOAMY_OPEN_SKILLS_ENABLED") {
+        if let Ok(flag) = environment.var("GLOAMY_OPEN_SKILLS_ENABLED") {
             if !flag.trim().is_empty() {
                 match flag.trim().to_ascii_lowercase().as_str() {
                     "1" | "true" | "yes" | "on" => self.skills.open_skills_enabled = true,
@@ -4866,7 +4894,7 @@ impl Config {
         }
 
         // Open-skills directory override: GLOAMY_OPEN_SKILLS_DIR
-        if let Ok(path) = std::env::var("GLOAMY_OPEN_SKILLS_DIR") {
+        if let Ok(path) = environment.var("GLOAMY_OPEN_SKILLS_DIR") {
             let trimmed = path.trim();
             if !trimmed.is_empty() {
                 self.skills.open_skills_dir = Some(trimmed.to_string());
@@ -4874,7 +4902,7 @@ impl Config {
         }
 
         // Skills prompt mode override: GLOAMY_SKILLS_PROMPT_MODE
-        if let Ok(mode) = std::env::var("GLOAMY_SKILLS_PROMPT_MODE") {
+        if let Ok(mode) = environment.var("GLOAMY_SKILLS_PROMPT_MODE") {
             if !mode.trim().is_empty() {
                 if let Some(parsed) = parse_skills_prompt_injection_mode(&mode) {
                     self.skills.prompt_injection_mode = parsed;
@@ -4887,8 +4915,9 @@ impl Config {
         }
 
         // Gateway port: GLOAMY_GATEWAY_PORT or PORT
-        if let Ok(port_str) =
-            std::env::var("GLOAMY_GATEWAY_PORT").or_else(|_| std::env::var("PORT"))
+        if let Ok(port_str) = environment
+            .var("GLOAMY_GATEWAY_PORT")
+            .or_else(|_| environment.var("PORT"))
         {
             if let Ok(port) = port_str.parse::<u16>() {
                 self.gateway.port = port;
@@ -4896,19 +4925,22 @@ impl Config {
         }
 
         // Gateway host: GLOAMY_GATEWAY_HOST or HOST
-        if let Ok(host) = std::env::var("GLOAMY_GATEWAY_HOST").or_else(|_| std::env::var("HOST")) {
+        if let Ok(host) = environment
+            .var("GLOAMY_GATEWAY_HOST")
+            .or_else(|_| environment.var("HOST"))
+        {
             if !host.is_empty() {
                 self.gateway.host = host;
             }
         }
 
         // Allow public bind: GLOAMY_ALLOW_PUBLIC_BIND
-        if let Ok(val) = std::env::var("GLOAMY_ALLOW_PUBLIC_BIND") {
+        if let Ok(val) = environment.var("GLOAMY_ALLOW_PUBLIC_BIND") {
             self.gateway.allow_public_bind = val == "1" || val.eq_ignore_ascii_case("true");
         }
 
         // Temperature: GLOAMY_TEMPERATURE
-        if let Ok(temp_str) = std::env::var("GLOAMY_TEMPERATURE") {
+        if let Ok(temp_str) = environment.var("GLOAMY_TEMPERATURE") {
             if let Ok(temp) = temp_str.parse::<f64>() {
                 if (0.0..=2.0).contains(&temp) {
                     self.default_temperature = temp;
@@ -4917,8 +4949,9 @@ impl Config {
         }
 
         // Reasoning override: GLOAMY_REASONING_ENABLED or REASONING_ENABLED
-        if let Ok(flag) = std::env::var("GLOAMY_REASONING_ENABLED")
-            .or_else(|_| std::env::var("REASONING_ENABLED"))
+        if let Ok(flag) = environment
+            .var("GLOAMY_REASONING_ENABLED")
+            .or_else(|_| environment.var("REASONING_ENABLED"))
         {
             let normalized = flag.trim().to_ascii_lowercase();
             match normalized.as_str() {
@@ -4929,15 +4962,17 @@ impl Config {
         }
 
         // Web search enabled: GLOAMY_WEB_SEARCH_ENABLED or WEB_SEARCH_ENABLED
-        if let Ok(enabled) = std::env::var("GLOAMY_WEB_SEARCH_ENABLED")
-            .or_else(|_| std::env::var("WEB_SEARCH_ENABLED"))
+        if let Ok(enabled) = environment
+            .var("GLOAMY_WEB_SEARCH_ENABLED")
+            .or_else(|_| environment.var("WEB_SEARCH_ENABLED"))
         {
             self.web_search.enabled = enabled == "1" || enabled.eq_ignore_ascii_case("true");
         }
 
         // Web search provider: GLOAMY_WEB_SEARCH_PROVIDER or WEB_SEARCH_PROVIDER
-        if let Ok(provider) = std::env::var("GLOAMY_WEB_SEARCH_PROVIDER")
-            .or_else(|_| std::env::var("WEB_SEARCH_PROVIDER"))
+        if let Ok(provider) = environment
+            .var("GLOAMY_WEB_SEARCH_PROVIDER")
+            .or_else(|_| environment.var("WEB_SEARCH_PROVIDER"))
         {
             let provider = provider.trim();
             if !provider.is_empty() {
@@ -4946,8 +4981,9 @@ impl Config {
         }
 
         // Brave API key: GLOAMY_BRAVE_API_KEY or BRAVE_API_KEY
-        if let Ok(api_key) =
-            std::env::var("GLOAMY_BRAVE_API_KEY").or_else(|_| std::env::var("BRAVE_API_KEY"))
+        if let Ok(api_key) = environment
+            .var("GLOAMY_BRAVE_API_KEY")
+            .or_else(|_| environment.var("BRAVE_API_KEY"))
         {
             let api_key = api_key.trim();
             if !api_key.is_empty() {
@@ -4956,8 +4992,9 @@ impl Config {
         }
 
         // Web search max results: GLOAMY_WEB_SEARCH_MAX_RESULTS or WEB_SEARCH_MAX_RESULTS
-        if let Ok(max_results) = std::env::var("GLOAMY_WEB_SEARCH_MAX_RESULTS")
-            .or_else(|_| std::env::var("WEB_SEARCH_MAX_RESULTS"))
+        if let Ok(max_results) = environment
+            .var("GLOAMY_WEB_SEARCH_MAX_RESULTS")
+            .or_else(|_| environment.var("WEB_SEARCH_MAX_RESULTS"))
         {
             if let Ok(max_results) = max_results.parse::<usize>() {
                 if (1..=10).contains(&max_results) {
@@ -4967,8 +5004,9 @@ impl Config {
         }
 
         // Web search timeout: GLOAMY_WEB_SEARCH_TIMEOUT_SECS or WEB_SEARCH_TIMEOUT_SECS
-        if let Ok(timeout_secs) = std::env::var("GLOAMY_WEB_SEARCH_TIMEOUT_SECS")
-            .or_else(|_| std::env::var("WEB_SEARCH_TIMEOUT_SECS"))
+        if let Ok(timeout_secs) = environment
+            .var("GLOAMY_WEB_SEARCH_TIMEOUT_SECS")
+            .or_else(|_| environment.var("WEB_SEARCH_TIMEOUT_SECS"))
         {
             if let Ok(timeout_secs) = timeout_secs.parse::<u64>() {
                 if timeout_secs > 0 {
@@ -4978,7 +5016,7 @@ impl Config {
         }
 
         // Storage provider key (optional backend override): GLOAMY_STORAGE_PROVIDER
-        if let Ok(provider) = std::env::var("GLOAMY_STORAGE_PROVIDER") {
+        if let Ok(provider) = environment.var("GLOAMY_STORAGE_PROVIDER") {
             let provider = provider.trim();
             if !provider.is_empty() {
                 self.storage.provider.config.provider = provider.to_string();
@@ -4986,7 +5024,7 @@ impl Config {
         }
 
         // Storage connection URL (for remote backends): GLOAMY_STORAGE_DB_URL
-        if let Ok(db_url) = std::env::var("GLOAMY_STORAGE_DB_URL") {
+        if let Ok(db_url) = environment.var("GLOAMY_STORAGE_DB_URL") {
             let db_url = db_url.trim();
             if !db_url.is_empty() {
                 self.storage.provider.config.db_url = Some(db_url.to_string());
@@ -4994,7 +5032,7 @@ impl Config {
         }
 
         // Storage connect timeout: GLOAMY_STORAGE_CONNECT_TIMEOUT_SECS
-        if let Ok(timeout_secs) = std::env::var("GLOAMY_STORAGE_CONNECT_TIMEOUT_SECS") {
+        if let Ok(timeout_secs) = environment.var("GLOAMY_STORAGE_CONNECT_TIMEOUT_SECS") {
             if let Ok(timeout_secs) = timeout_secs.parse::<u64>() {
                 if timeout_secs > 0 {
                     self.storage.provider.config.connect_timeout_secs = Some(timeout_secs);
@@ -5002,7 +5040,8 @@ impl Config {
             }
         }
         // Proxy enabled flag: GLOAMY_PROXY_ENABLED
-        let explicit_proxy_enabled = std::env::var("GLOAMY_PROXY_ENABLED")
+        let explicit_proxy_enabled = environment
+            .var("GLOAMY_PROXY_ENABLED")
             .ok()
             .as_deref()
             .and_then(parse_proxy_enabled);
@@ -5012,26 +5051,30 @@ impl Config {
 
         // Proxy URLs: GLOAMY_* wins, then generic *PROXY vars.
         let mut proxy_url_overridden = false;
-        if let Ok(proxy_url) =
-            std::env::var("GLOAMY_HTTP_PROXY").or_else(|_| std::env::var("HTTP_PROXY"))
+        if let Ok(proxy_url) = environment
+            .var("GLOAMY_HTTP_PROXY")
+            .or_else(|_| environment.var("HTTP_PROXY"))
         {
             self.proxy.http_proxy = normalize_proxy_url_option(Some(&proxy_url));
             proxy_url_overridden = true;
         }
-        if let Ok(proxy_url) =
-            std::env::var("GLOAMY_HTTPS_PROXY").or_else(|_| std::env::var("HTTPS_PROXY"))
+        if let Ok(proxy_url) = environment
+            .var("GLOAMY_HTTPS_PROXY")
+            .or_else(|_| environment.var("HTTPS_PROXY"))
         {
             self.proxy.https_proxy = normalize_proxy_url_option(Some(&proxy_url));
             proxy_url_overridden = true;
         }
-        if let Ok(proxy_url) =
-            std::env::var("GLOAMY_ALL_PROXY").or_else(|_| std::env::var("ALL_PROXY"))
+        if let Ok(proxy_url) = environment
+            .var("GLOAMY_ALL_PROXY")
+            .or_else(|_| environment.var("ALL_PROXY"))
         {
             self.proxy.all_proxy = normalize_proxy_url_option(Some(&proxy_url));
             proxy_url_overridden = true;
         }
-        if let Ok(no_proxy) =
-            std::env::var("GLOAMY_NO_PROXY").or_else(|_| std::env::var("NO_PROXY"))
+        if let Ok(no_proxy) = environment
+            .var("GLOAMY_NO_PROXY")
+            .or_else(|_| environment.var("NO_PROXY"))
         {
             self.proxy.no_proxy = normalize_no_proxy_list(vec![no_proxy]);
         }
@@ -5044,7 +5087,7 @@ impl Config {
         }
 
         // Proxy scope and service selectors.
-        if let Ok(scope_raw) = std::env::var("GLOAMY_PROXY_SCOPE") {
+        if let Ok(scope_raw) = environment.var("GLOAMY_PROXY_SCOPE") {
             if let Some(scope) = parse_proxy_scope(&scope_raw) {
                 self.proxy.scope = scope;
             } else {
@@ -5055,7 +5098,7 @@ impl Config {
             }
         }
 
-        if let Ok(services_raw) = std::env::var("GLOAMY_PROXY_SERVICES") {
+        if let Ok(services_raw) = environment.var("GLOAMY_PROXY_SERVICES") {
             self.proxy.services = normalize_service_list(vec![services_raw]);
         }
 
@@ -5064,11 +5107,12 @@ impl Config {
             self.proxy.enabled = false;
         }
 
-        if self.proxy.enabled && self.proxy.scope == ProxyScope::Environment {
-            self.proxy.apply_to_process_env();
-        }
-
         set_runtime_proxy_config(self.proxy.clone());
+        if self.proxy.enabled && self.proxy.scope == ProxyScope::Environment {
+            self.proxy.apply_to_environment_overlay();
+        } else {
+            ProxyConfig::clear_environment_overlay();
+        }
     }
 
     pub async fn save(&self) -> Result<()> {
@@ -5240,10 +5284,9 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
     use std::path::PathBuf;
     use tempfile::TempDir;
-    use tokio::sync::{Mutex, MutexGuard};
     use tokio::test;
-    use tokio_stream::wrappers::ReadDirStream;
     use tokio_stream::StreamExt;
+    use tokio_stream::wrappers::ReadDirStream;
 
     // ── Defaults ─────────────────────────────────────────────
 
@@ -5826,10 +5869,12 @@ tool_dispatcher = "xml"
 
         let contents = tokio::fs::read_to_string(&config_path).await.unwrap();
         let loaded: Config = toml::from_str(&contents).unwrap();
-        assert!(loaded
-            .api_key
-            .as_deref()
-            .is_some_and(crate::security::SecretStore::is_encrypted));
+        assert!(
+            loaded
+                .api_key
+                .as_deref()
+                .is_some_and(crate::security::SecretStore::is_encrypted)
+        );
         let store = crate::security::SecretStore::new(&dir, true);
         let decrypted = store.decrypt(loaded.api_key.as_deref().unwrap()).unwrap();
         assert_eq!(decrypted, "sk-roundtrip");
@@ -6800,9 +6845,8 @@ default_temperature = 0.7
 
     // ── Environment variable overrides (Docker support) ─────────
 
-    async fn env_override_lock() -> MutexGuard<'static, ()> {
-        static ENV_OVERRIDE_TEST_LOCK: Mutex<()> = Mutex::const_new(());
-        ENV_OVERRIDE_TEST_LOCK.lock().await
+    fn env_override_lock() -> std::sync::MutexGuard<'static, ()> {
+        crate::environment::test::lock()
     }
 
     fn clear_proxy_env_test_vars() {
@@ -6823,91 +6867,149 @@ default_temperature = 0.7
             "all_proxy",
             "no_proxy",
         ] {
-            std::env::remove_var(key);
+            crate::environment::test::remove_var(key);
         }
     }
 
     #[test]
     async fn env_override_api_key() {
-        let _env_guard = env_override_lock().await;
+        let _env_guard = env_override_lock();
         let mut config = Config::default();
         assert!(config.api_key.is_none());
 
-        std::env::set_var("GLOAMY_API_KEY", "sk-test-env-key");
+        crate::environment::test::set_var("GLOAMY_API_KEY", "sk-test-env-key");
         config.apply_env_overrides();
         assert_eq!(config.api_key.as_deref(), Some("sk-test-env-key"));
 
-        std::env::remove_var("GLOAMY_API_KEY");
+        crate::environment::test::remove_var("GLOAMY_API_KEY");
+    }
+
+    #[test]
+    async fn explicit_environment_source_applies_process_then_dotenv_over_config() {
+        let _environment_lock = env_override_lock();
+        let inherited_environment: HashMap<_, _> = std::env::vars_os().collect();
+        let source = crate::environment::EnvironmentSource::from_maps(
+            HashMap::from([
+                (
+                    std::ffi::OsString::from("GLOAMY_API_KEY"),
+                    std::ffi::OsString::from("process-key"),
+                ),
+                (
+                    std::ffi::OsString::from("GLOAMY_MODEL"),
+                    std::ffi::OsString::from("process-model"),
+                ),
+            ]),
+            HashMap::from([
+                (
+                    std::ffi::OsString::from("GLOAMY_API_KEY"),
+                    std::ffi::OsString::from("dotenv-key"),
+                ),
+                (
+                    std::ffi::OsString::from("GLOAMY_MODEL"),
+                    std::ffi::OsString::from("dotenv-model"),
+                ),
+                (
+                    std::ffi::OsString::from("GLOAMY_REASONING_ENABLED"),
+                    std::ffi::OsString::from("true"),
+                ),
+            ]),
+        );
+
+        let mut config = Config::default();
+        config.api_key = Some("config-key".to_string());
+        config.default_model = Some("config-model".to_string());
+        config.runtime.reasoning_enabled = Some(false);
+        config.apply_env_overrides_from(&source);
+
+        assert_eq!(config.api_key.as_deref(), Some("process-key"));
+        assert_eq!(config.default_model.as_deref(), Some("process-model"));
+        assert_eq!(config.runtime.reasoning_enabled, Some(true));
+        assert_eq!(
+            std::env::vars_os().collect::<HashMap<_, _>>(),
+            inherited_environment
+        );
+
+        let dotenv_only = crate::environment::EnvironmentSource::from_maps(
+            HashMap::new(),
+            HashMap::from([(
+                std::ffi::OsString::from("GLOAMY_API_KEY"),
+                std::ffi::OsString::from("dotenv-only-key"),
+            )]),
+        );
+        let mut config = Config::default();
+        config.api_key = Some("config-key".to_string());
+        config.apply_env_overrides_from(&dotenv_only);
+        assert_eq!(config.api_key.as_deref(), Some("dotenv-only-key"));
     }
 
     #[test]
     async fn env_override_api_key_fallback() {
-        let _env_guard = env_override_lock().await;
+        let _env_guard = env_override_lock();
         let mut config = Config::default();
 
-        std::env::remove_var("GLOAMY_API_KEY");
-        std::env::set_var("API_KEY", "sk-fallback-key");
+        crate::environment::test::remove_var("GLOAMY_API_KEY");
+        crate::environment::test::set_var("API_KEY", "sk-fallback-key");
         config.apply_env_overrides();
         assert_eq!(config.api_key.as_deref(), Some("sk-fallback-key"));
 
-        std::env::remove_var("API_KEY");
+        crate::environment::test::remove_var("API_KEY");
     }
 
     #[test]
     async fn env_override_openrouter_api_key_when_provider_is_openrouter() {
-        let _env_guard = env_override_lock().await;
+        let _env_guard = env_override_lock();
         let mut config = Config::default();
         config.default_provider = Some("openrouter".to_string());
         config.api_key = Some("stale-config-key".to_string());
 
-        std::env::set_var("OPENROUTER_API_KEY", "sk-or-test-key");
+        crate::environment::test::set_var("OPENROUTER_API_KEY", "sk-or-test-key");
         config.apply_env_overrides();
         assert_eq!(config.api_key.as_deref(), Some("sk-or-test-key"));
 
-        std::env::remove_var("OPENROUTER_API_KEY");
+        crate::environment::test::remove_var("OPENROUTER_API_KEY");
     }
 
     #[test]
     async fn env_override_openrouter_api_key_applies_after_provider_env_override() {
-        let _env_guard = env_override_lock().await;
+        let _env_guard = env_override_lock();
         let mut config = Config::default();
         config.default_provider = Some("anthropic".to_string());
         config.api_key = Some("stale-config-key".to_string());
 
-        std::env::set_var("GLOAMY_PROVIDER", "openrouter");
-        std::env::set_var("OPENROUTER_API_KEY", "sk-or-test-key");
+        crate::environment::test::set_var("GLOAMY_PROVIDER", "openrouter");
+        crate::environment::test::set_var("OPENROUTER_API_KEY", "sk-or-test-key");
         config.apply_env_overrides();
 
         assert_eq!(config.default_provider.as_deref(), Some("openrouter"));
         assert_eq!(config.api_key.as_deref(), Some("sk-or-test-key"));
 
-        std::env::remove_var("GLOAMY_PROVIDER");
-        std::env::remove_var("OPENROUTER_API_KEY");
+        crate::environment::test::remove_var("GLOAMY_PROVIDER");
+        crate::environment::test::remove_var("OPENROUTER_API_KEY");
     }
 
     #[test]
     async fn env_override_provider() {
-        let _env_guard = env_override_lock().await;
+        let _env_guard = env_override_lock();
         let mut config = Config::default();
 
-        std::env::set_var("GLOAMY_PROVIDER", "anthropic");
+        crate::environment::test::set_var("GLOAMY_PROVIDER", "anthropic");
         config.apply_env_overrides();
         assert_eq!(config.default_provider.as_deref(), Some("anthropic"));
 
-        std::env::remove_var("GLOAMY_PROVIDER");
+        crate::environment::test::remove_var("GLOAMY_PROVIDER");
     }
 
     #[test]
     async fn env_override_model_provider_alias() {
-        let _env_guard = env_override_lock().await;
+        let _env_guard = env_override_lock();
         let mut config = Config::default();
 
-        std::env::remove_var("GLOAMY_PROVIDER");
-        std::env::set_var("GLOAMY_MODEL_PROVIDER", "openai-codex");
+        crate::environment::test::remove_var("GLOAMY_PROVIDER");
+        crate::environment::test::set_var("GLOAMY_MODEL_PROVIDER", "openai-codex");
         config.apply_env_overrides();
         assert_eq!(config.default_provider.as_deref(), Some("openai-codex"));
 
-        std::env::remove_var("GLOAMY_MODEL_PROVIDER");
+        crate::environment::test::remove_var("GLOAMY_MODEL_PROVIDER");
     }
 
     #[test]
@@ -6937,7 +7039,7 @@ requires_openai_auth = true
 
     #[test]
     async fn env_override_open_skills_enabled_and_dir() {
-        let _env_guard = env_override_lock().await;
+        let _env_guard = env_override_lock();
         let mut config = Config::default();
         assert!(!config.skills.open_skills_enabled);
         assert!(config.skills.open_skills_dir.is_none());
@@ -6946,9 +7048,9 @@ requires_openai_auth = true
             SkillsPromptInjectionMode::Full
         );
 
-        std::env::set_var("GLOAMY_OPEN_SKILLS_ENABLED", "true");
-        std::env::set_var("GLOAMY_OPEN_SKILLS_DIR", "/tmp/open-skills");
-        std::env::set_var("GLOAMY_SKILLS_PROMPT_MODE", "compact");
+        crate::environment::test::set_var("GLOAMY_OPEN_SKILLS_ENABLED", "true");
+        crate::environment::test::set_var("GLOAMY_OPEN_SKILLS_DIR", "/tmp/open-skills");
+        crate::environment::test::set_var("GLOAMY_SKILLS_PROMPT_MODE", "compact");
         config.apply_env_overrides();
 
         assert!(config.skills.open_skills_enabled);
@@ -6961,20 +7063,20 @@ requires_openai_auth = true
             SkillsPromptInjectionMode::Compact
         );
 
-        std::env::remove_var("GLOAMY_OPEN_SKILLS_ENABLED");
-        std::env::remove_var("GLOAMY_OPEN_SKILLS_DIR");
-        std::env::remove_var("GLOAMY_SKILLS_PROMPT_MODE");
+        crate::environment::test::remove_var("GLOAMY_OPEN_SKILLS_ENABLED");
+        crate::environment::test::remove_var("GLOAMY_OPEN_SKILLS_DIR");
+        crate::environment::test::remove_var("GLOAMY_SKILLS_PROMPT_MODE");
     }
 
     #[test]
     async fn env_override_open_skills_enabled_invalid_value_keeps_existing_value() {
-        let _env_guard = env_override_lock().await;
+        let _env_guard = env_override_lock();
         let mut config = Config::default();
         config.skills.open_skills_enabled = true;
         config.skills.prompt_injection_mode = SkillsPromptInjectionMode::Compact;
 
-        std::env::set_var("GLOAMY_OPEN_SKILLS_ENABLED", "maybe");
-        std::env::set_var("GLOAMY_SKILLS_PROMPT_MODE", "invalid");
+        crate::environment::test::set_var("GLOAMY_OPEN_SKILLS_ENABLED", "maybe");
+        crate::environment::test::set_var("GLOAMY_SKILLS_PROMPT_MODE", "invalid");
         config.apply_env_overrides();
 
         assert!(config.skills.open_skills_enabled);
@@ -6982,104 +7084,104 @@ requires_openai_auth = true
             config.skills.prompt_injection_mode,
             SkillsPromptInjectionMode::Compact
         );
-        std::env::remove_var("GLOAMY_OPEN_SKILLS_ENABLED");
-        std::env::remove_var("GLOAMY_SKILLS_PROMPT_MODE");
+        crate::environment::test::remove_var("GLOAMY_OPEN_SKILLS_ENABLED");
+        crate::environment::test::remove_var("GLOAMY_SKILLS_PROMPT_MODE");
     }
 
     #[test]
     async fn env_override_provider_fallback() {
-        let _env_guard = env_override_lock().await;
+        let _env_guard = env_override_lock();
         let mut config = Config::default();
 
-        std::env::remove_var("GLOAMY_PROVIDER");
-        std::env::set_var("PROVIDER", "openrouter");
+        crate::environment::test::remove_var("GLOAMY_PROVIDER");
+        crate::environment::test::set_var("PROVIDER", "openrouter");
         config.apply_env_overrides();
         assert_eq!(config.default_provider.as_deref(), Some("openrouter"));
 
-        std::env::remove_var("PROVIDER");
+        crate::environment::test::remove_var("PROVIDER");
     }
 
     #[test]
     async fn env_override_provider_fallback_does_not_replace_non_default_provider() {
-        let _env_guard = env_override_lock().await;
+        let _env_guard = env_override_lock();
         let mut config = Config {
             default_provider: Some("custom:https://proxy.example.com/v1".to_string()),
             ..Config::default()
         };
 
-        std::env::remove_var("GLOAMY_PROVIDER");
-        std::env::set_var("PROVIDER", "openrouter");
+        crate::environment::test::remove_var("GLOAMY_PROVIDER");
+        crate::environment::test::set_var("PROVIDER", "openrouter");
         config.apply_env_overrides();
         assert_eq!(
             config.default_provider.as_deref(),
             Some("custom:https://proxy.example.com/v1")
         );
 
-        std::env::remove_var("PROVIDER");
+        crate::environment::test::remove_var("PROVIDER");
     }
 
     #[test]
     async fn env_override_zero_claw_provider_overrides_non_default_provider() {
-        let _env_guard = env_override_lock().await;
+        let _env_guard = env_override_lock();
         let mut config = Config {
             default_provider: Some("custom:https://proxy.example.com/v1".to_string()),
             ..Config::default()
         };
 
-        std::env::set_var("GLOAMY_PROVIDER", "openrouter");
-        std::env::set_var("PROVIDER", "anthropic");
+        crate::environment::test::set_var("GLOAMY_PROVIDER", "openrouter");
+        crate::environment::test::set_var("PROVIDER", "anthropic");
         config.apply_env_overrides();
         assert_eq!(config.default_provider.as_deref(), Some("openrouter"));
 
-        std::env::remove_var("GLOAMY_PROVIDER");
-        std::env::remove_var("PROVIDER");
+        crate::environment::test::remove_var("GLOAMY_PROVIDER");
+        crate::environment::test::remove_var("PROVIDER");
     }
 
     #[test]
     async fn env_override_glm_api_key_for_regional_aliases() {
-        let _env_guard = env_override_lock().await;
+        let _env_guard = env_override_lock();
         let mut config = Config {
             default_provider: Some("glm-cn".to_string()),
             ..Config::default()
         };
 
-        std::env::set_var("GLM_API_KEY", "glm-regional-key");
+        crate::environment::test::set_var("GLM_API_KEY", "glm-regional-key");
         config.apply_env_overrides();
         assert_eq!(config.api_key.as_deref(), Some("glm-regional-key"));
 
-        std::env::remove_var("GLM_API_KEY");
+        crate::environment::test::remove_var("GLM_API_KEY");
     }
 
     #[test]
     async fn env_override_zai_api_key_for_regional_aliases() {
-        let _env_guard = env_override_lock().await;
+        let _env_guard = env_override_lock();
         let mut config = Config {
             default_provider: Some("zai-cn".to_string()),
             ..Config::default()
         };
 
-        std::env::set_var("ZAI_API_KEY", "zai-regional-key");
+        crate::environment::test::set_var("ZAI_API_KEY", "zai-regional-key");
         config.apply_env_overrides();
         assert_eq!(config.api_key.as_deref(), Some("zai-regional-key"));
 
-        std::env::remove_var("ZAI_API_KEY");
+        crate::environment::test::remove_var("ZAI_API_KEY");
     }
 
     #[test]
     async fn env_override_model() {
-        let _env_guard = env_override_lock().await;
+        let _env_guard = env_override_lock();
         let mut config = Config::default();
 
-        std::env::set_var("GLOAMY_MODEL", "gpt-4o");
+        crate::environment::test::set_var("GLOAMY_MODEL", "gpt-4o");
         config.apply_env_overrides();
         assert_eq!(config.default_model.as_deref(), Some("gpt-4o"));
 
-        std::env::remove_var("GLOAMY_MODEL");
+        crate::environment::test::remove_var("GLOAMY_MODEL");
     }
 
     #[test]
     async fn model_provider_profile_maps_to_custom_endpoint() {
-        let _env_guard = env_override_lock().await;
+        let _env_guard = env_override_lock();
         let mut config = Config {
             default_provider: Some("sub2api".to_string()),
             model_providers: HashMap::from([(
@@ -7107,7 +7209,7 @@ requires_openai_auth = true
 
     #[test]
     async fn model_provider_profile_responses_uses_openai_codex_and_openai_key() {
-        let _env_guard = env_override_lock().await;
+        let _env_guard = env_override_lock();
         let mut config = Config {
             default_provider: Some("sub2api".to_string()),
             model_providers: HashMap::from([(
@@ -7123,9 +7225,9 @@ requires_openai_auth = true
             ..Config::default()
         };
 
-        std::env::set_var("OPENAI_API_KEY", "sk-test-codex-key");
+        crate::environment::test::set_var("OPENAI_API_KEY", "sk-test-codex-key");
         config.apply_env_overrides();
-        std::env::remove_var("OPENAI_API_KEY");
+        crate::environment::test::remove_var("OPENAI_API_KEY");
 
         assert_eq!(config.default_provider.as_deref(), Some("openai-codex"));
         assert_eq!(config.api_url.as_deref(), Some("https://api.tonsof.blue"));
@@ -7134,7 +7236,7 @@ requires_openai_auth = true
 
     #[test]
     async fn validate_ollama_cloud_model_requires_remote_api_url() {
-        let _env_guard = env_override_lock().await;
+        let _env_guard = env_override_lock();
         let config = Config {
             default_provider: Some("ollama".to_string()),
             default_model: Some("glm-5:cloud".to_string()),
@@ -7151,7 +7253,7 @@ requires_openai_auth = true
 
     #[test]
     async fn validate_ollama_cloud_model_accepts_remote_endpoint_and_env_key() {
-        let _env_guard = env_override_lock().await;
+        let _env_guard = env_override_lock();
         let config = Config {
             default_provider: Some("ollama".to_string()),
             default_model: Some("glm-5:cloud".to_string()),
@@ -7160,16 +7262,16 @@ requires_openai_auth = true
             ..Config::default()
         };
 
-        std::env::set_var("OLLAMA_API_KEY", "ollama-env-key");
+        crate::environment::test::set_var("OLLAMA_API_KEY", "ollama-env-key");
         let result = config.validate();
-        std::env::remove_var("OLLAMA_API_KEY");
+        crate::environment::test::remove_var("OLLAMA_API_KEY");
 
         assert!(result.is_ok(), "expected validation to pass: {result:?}");
     }
 
     #[test]
     async fn validate_rejects_unknown_model_provider_wire_api() {
-        let _env_guard = env_override_lock().await;
+        let _env_guard = env_override_lock();
         let config = Config {
             default_provider: Some("sub2api".to_string()),
             model_providers: HashMap::from([(
@@ -7185,63 +7287,68 @@ requires_openai_auth = true
         };
 
         let error = config.validate().expect_err("expected validation failure");
-        assert!(error
-            .to_string()
-            .contains("wire_api must be one of: responses, chat_completions"));
+        assert!(
+            error
+                .to_string()
+                .contains("wire_api must be one of: responses, chat_completions")
+        );
     }
 
     #[test]
     async fn env_override_model_fallback() {
-        let _env_guard = env_override_lock().await;
+        let _env_guard = env_override_lock();
         let mut config = Config::default();
 
-        std::env::remove_var("GLOAMY_MODEL");
-        std::env::set_var("MODEL", "anthropic/claude-3.5-sonnet");
+        crate::environment::test::remove_var("GLOAMY_MODEL");
+        crate::environment::test::set_var("MODEL", "anthropic/claude-3.5-sonnet");
         config.apply_env_overrides();
         assert_eq!(
             config.default_model.as_deref(),
             Some("anthropic/claude-3.5-sonnet")
         );
 
-        std::env::remove_var("MODEL");
+        crate::environment::test::remove_var("MODEL");
     }
 
     #[test]
     async fn env_override_workspace() {
-        let _env_guard = env_override_lock().await;
+        let _env_guard = env_override_lock();
         let mut config = Config::default();
 
-        std::env::set_var("GLOAMY_WORKSPACE", "/custom/workspace");
+        crate::environment::test::set_var("GLOAMY_WORKSPACE", "/custom/workspace");
         config.apply_env_overrides();
         assert_eq!(config.workspace_dir, PathBuf::from("/custom/workspace"));
 
-        std::env::remove_var("GLOAMY_WORKSPACE");
+        crate::environment::test::remove_var("GLOAMY_WORKSPACE");
     }
 
     #[test]
     async fn resolve_runtime_config_dirs_uses_env_workspace_first() {
-        let _env_guard = env_override_lock().await;
+        let _env_guard = env_override_lock();
         let default_config_dir = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
         let default_workspace_dir = default_config_dir.join("workspace");
         let workspace_dir = default_config_dir.join("profile-a");
 
-        std::env::set_var("GLOAMY_WORKSPACE", &workspace_dir);
-        let (config_dir, resolved_workspace_dir, source) =
-            resolve_runtime_config_dirs(&default_config_dir, &default_workspace_dir)
-                .await
-                .unwrap();
+        crate::environment::test::set_var("GLOAMY_WORKSPACE", &workspace_dir);
+        let (config_dir, resolved_workspace_dir, source) = resolve_runtime_config_dirs_from(
+            &default_config_dir,
+            &default_workspace_dir,
+            &crate::environment::runtime_source(),
+        )
+        .await
+        .unwrap();
 
         assert_eq!(source, ConfigResolutionSource::EnvWorkspace);
         assert_eq!(config_dir, workspace_dir);
         assert_eq!(resolved_workspace_dir, workspace_dir.join("workspace"));
 
-        std::env::remove_var("GLOAMY_WORKSPACE");
+        crate::environment::test::remove_var("GLOAMY_WORKSPACE");
         let _ = fs::remove_dir_all(default_config_dir).await;
     }
 
     #[test]
     async fn resolve_runtime_config_dirs_uses_env_config_dir_first() {
-        let _env_guard = env_override_lock().await;
+        let _env_guard = env_override_lock();
         let default_config_dir = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
         let default_workspace_dir = default_config_dir.join("workspace");
         let explicit_config_dir = default_config_dir.join("explicit-config");
@@ -7256,13 +7363,16 @@ requires_openai_auth = true
             .await
             .unwrap();
 
-        std::env::set_var("GLOAMY_CONFIG_DIR", &explicit_config_dir);
-        std::env::remove_var("GLOAMY_WORKSPACE");
+        crate::environment::test::set_var("GLOAMY_CONFIG_DIR", &explicit_config_dir);
+        crate::environment::test::remove_var("GLOAMY_WORKSPACE");
 
-        let (config_dir, resolved_workspace_dir, source) =
-            resolve_runtime_config_dirs(&default_config_dir, &default_workspace_dir)
-                .await
-                .unwrap();
+        let (config_dir, resolved_workspace_dir, source) = resolve_runtime_config_dirs_from(
+            &default_config_dir,
+            &default_workspace_dir,
+            &crate::environment::runtime_source(),
+        )
+        .await
+        .unwrap();
 
         assert_eq!(source, ConfigResolutionSource::EnvConfigDir);
         assert_eq!(config_dir, explicit_config_dir);
@@ -7271,19 +7381,19 @@ requires_openai_auth = true
             explicit_config_dir.join("workspace")
         );
 
-        std::env::remove_var("GLOAMY_CONFIG_DIR");
+        crate::environment::test::remove_var("GLOAMY_CONFIG_DIR");
         let _ = fs::remove_dir_all(default_config_dir).await;
     }
 
     #[test]
     async fn resolve_runtime_config_dirs_uses_active_workspace_marker() {
-        let _env_guard = env_override_lock().await;
+        let _env_guard = env_override_lock();
         let default_config_dir = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
         let default_workspace_dir = default_config_dir.join("workspace");
         let marker_config_dir = default_config_dir.join("profiles").join("alpha");
         let state_path = default_config_dir.join(ACTIVE_WORKSPACE_STATE_FILE);
 
-        std::env::remove_var("GLOAMY_WORKSPACE");
+        crate::environment::test::remove_var("GLOAMY_WORKSPACE");
         fs::create_dir_all(&default_config_dir).await.unwrap();
         let state = ActiveWorkspaceState {
             config_dir: marker_config_dir.to_string_lossy().into_owned(),
@@ -7292,10 +7402,13 @@ requires_openai_auth = true
             .await
             .unwrap();
 
-        let (config_dir, resolved_workspace_dir, source) =
-            resolve_runtime_config_dirs(&default_config_dir, &default_workspace_dir)
-                .await
-                .unwrap();
+        let (config_dir, resolved_workspace_dir, source) = resolve_runtime_config_dirs_from(
+            &default_config_dir,
+            &default_workspace_dir,
+            &crate::environment::runtime_source(),
+        )
+        .await
+        .unwrap();
 
         assert_eq!(source, ConfigResolutionSource::ActiveWorkspaceMarker);
         assert_eq!(config_dir, marker_config_dir);
@@ -7306,15 +7419,18 @@ requires_openai_auth = true
 
     #[test]
     async fn resolve_runtime_config_dirs_falls_back_to_default_layout() {
-        let _env_guard = env_override_lock().await;
+        let _env_guard = env_override_lock();
         let default_config_dir = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
         let default_workspace_dir = default_config_dir.join("workspace");
 
-        std::env::remove_var("GLOAMY_WORKSPACE");
-        let (config_dir, resolved_workspace_dir, source) =
-            resolve_runtime_config_dirs(&default_config_dir, &default_workspace_dir)
-                .await
-                .unwrap();
+        crate::environment::test::remove_var("GLOAMY_WORKSPACE");
+        let (config_dir, resolved_workspace_dir, source) = resolve_runtime_config_dirs_from(
+            &default_config_dir,
+            &default_workspace_dir,
+            &crate::environment::runtime_source(),
+        )
+        .await
+        .unwrap();
 
         assert_eq!(source, ConfigResolutionSource::DefaultConfigDir);
         assert_eq!(config_dir, default_config_dir);
@@ -7325,14 +7441,14 @@ requires_openai_auth = true
 
     #[test]
     async fn load_or_init_workspace_override_uses_workspace_root_for_config() {
-        let _env_guard = env_override_lock().await;
+        let _env_guard = env_override_lock();
         let temp_home =
             std::env::temp_dir().join(format!("gloamy_test_home_{}", uuid::Uuid::new_v4()));
         let workspace_dir = temp_home.join("profile-a");
 
-        let original_home = std::env::var("HOME").ok();
-        std::env::set_var("HOME", &temp_home);
-        std::env::set_var("GLOAMY_WORKSPACE", &workspace_dir);
+        let original_home = crate::environment::var("HOME").ok();
+        crate::environment::test::set_var("HOME", &temp_home);
+        crate::environment::test::set_var("GLOAMY_WORKSPACE", &workspace_dir);
 
         let config = Config::load_or_init().await.unwrap();
 
@@ -7340,26 +7456,26 @@ requires_openai_auth = true
         assert_eq!(config.config_path, workspace_dir.join("config.toml"));
         assert!(workspace_dir.join("config.toml").exists());
 
-        std::env::remove_var("GLOAMY_WORKSPACE");
+        crate::environment::test::remove_var("GLOAMY_WORKSPACE");
         if let Some(home) = original_home {
-            std::env::set_var("HOME", home);
+            crate::environment::test::set_var("HOME", home);
         } else {
-            std::env::remove_var("HOME");
+            crate::environment::test::remove_var("HOME");
         }
         let _ = fs::remove_dir_all(temp_home).await;
     }
 
     #[test]
     async fn load_or_init_workspace_suffix_uses_legacy_config_layout() {
-        let _env_guard = env_override_lock().await;
+        let _env_guard = env_override_lock();
         let temp_home =
             std::env::temp_dir().join(format!("gloamy_test_home_{}", uuid::Uuid::new_v4()));
         let workspace_dir = temp_home.join("workspace");
         let legacy_config_path = temp_home.join(".gloamy").join("config.toml");
 
-        let original_home = std::env::var("HOME").ok();
-        std::env::set_var("HOME", &temp_home);
-        std::env::set_var("GLOAMY_WORKSPACE", &workspace_dir);
+        let original_home = crate::environment::var("HOME").ok();
+        crate::environment::test::set_var("HOME", &temp_home);
+        crate::environment::test::set_var("GLOAMY_WORKSPACE", &workspace_dir);
 
         let config = Config::load_or_init().await.unwrap();
 
@@ -7367,18 +7483,18 @@ requires_openai_auth = true
         assert_eq!(config.config_path, legacy_config_path);
         assert!(config.config_path.exists());
 
-        std::env::remove_var("GLOAMY_WORKSPACE");
+        crate::environment::test::remove_var("GLOAMY_WORKSPACE");
         if let Some(home) = original_home {
-            std::env::set_var("HOME", home);
+            crate::environment::test::set_var("HOME", home);
         } else {
-            std::env::remove_var("HOME");
+            crate::environment::test::remove_var("HOME");
         }
         let _ = fs::remove_dir_all(temp_home).await;
     }
 
     #[test]
     async fn load_or_init_workspace_override_keeps_existing_legacy_config() {
-        let _env_guard = env_override_lock().await;
+        let _env_guard = env_override_lock();
         let temp_home =
             std::env::temp_dir().join(format!("gloamy_test_home_{}", uuid::Uuid::new_v4()));
         let workspace_dir = temp_home.join("custom-workspace");
@@ -7395,9 +7511,9 @@ default_model = "legacy-model"
         .await
         .unwrap();
 
-        let original_home = std::env::var("HOME").ok();
-        std::env::set_var("HOME", &temp_home);
-        std::env::set_var("GLOAMY_WORKSPACE", &workspace_dir);
+        let original_home = crate::environment::var("HOME").ok();
+        crate::environment::test::set_var("HOME", &temp_home);
+        crate::environment::test::set_var("GLOAMY_WORKSPACE", &workspace_dir);
 
         let config = Config::load_or_init().await.unwrap();
 
@@ -7405,18 +7521,18 @@ default_model = "legacy-model"
         assert_eq!(config.config_path, legacy_config_path);
         assert_eq!(config.default_model.as_deref(), Some("legacy-model"));
 
-        std::env::remove_var("GLOAMY_WORKSPACE");
+        crate::environment::test::remove_var("GLOAMY_WORKSPACE");
         if let Some(home) = original_home {
-            std::env::set_var("HOME", home);
+            crate::environment::test::set_var("HOME", home);
         } else {
-            std::env::remove_var("HOME");
+            crate::environment::test::remove_var("HOME");
         }
         let _ = fs::remove_dir_all(temp_home).await;
     }
 
     #[test]
     async fn load_or_init_uses_persisted_active_workspace_marker() {
-        let _env_guard = env_override_lock().await;
+        let _env_guard = env_override_lock();
         let temp_home =
             std::env::temp_dir().join(format!("gloamy_test_home_{}", uuid::Uuid::new_v4()));
         let custom_config_dir = temp_home.join("profiles").join("agent-alpha");
@@ -7429,9 +7545,9 @@ default_model = "legacy-model"
         .await
         .unwrap();
 
-        let original_home = std::env::var("HOME").ok();
-        std::env::set_var("HOME", &temp_home);
-        std::env::remove_var("GLOAMY_WORKSPACE");
+        let original_home = crate::environment::var("HOME").ok();
+        crate::environment::test::set_var("HOME", &temp_home);
+        crate::environment::test::remove_var("GLOAMY_WORKSPACE");
 
         persist_active_workspace_config_dir(&custom_config_dir)
             .await
@@ -7444,16 +7560,16 @@ default_model = "legacy-model"
         assert_eq!(config.default_model.as_deref(), Some("persisted-profile"));
 
         if let Some(home) = original_home {
-            std::env::set_var("HOME", home);
+            crate::environment::test::set_var("HOME", home);
         } else {
-            std::env::remove_var("HOME");
+            crate::environment::test::remove_var("HOME");
         }
         let _ = fs::remove_dir_all(temp_home).await;
     }
 
     #[test]
     async fn load_or_init_env_workspace_override_takes_priority_over_marker() {
-        let _env_guard = env_override_lock().await;
+        let _env_guard = env_override_lock();
         let temp_home =
             std::env::temp_dir().join(format!("gloamy_test_home_{}", uuid::Uuid::new_v4()));
         let marker_config_dir = temp_home.join("profiles").join("persisted-profile");
@@ -7467,38 +7583,38 @@ default_model = "legacy-model"
         .await
         .unwrap();
 
-        let original_home = std::env::var("HOME").ok();
-        std::env::set_var("HOME", &temp_home);
+        let original_home = crate::environment::var("HOME").ok();
+        crate::environment::test::set_var("HOME", &temp_home);
         persist_active_workspace_config_dir(&marker_config_dir)
             .await
             .unwrap();
-        std::env::set_var("GLOAMY_WORKSPACE", &env_workspace_dir);
+        crate::environment::test::set_var("GLOAMY_WORKSPACE", &env_workspace_dir);
 
         let config = Config::load_or_init().await.unwrap();
 
         assert_eq!(config.workspace_dir, env_workspace_dir.join("workspace"));
         assert_eq!(config.config_path, env_workspace_dir.join("config.toml"));
 
-        std::env::remove_var("GLOAMY_WORKSPACE");
+        crate::environment::test::remove_var("GLOAMY_WORKSPACE");
         if let Some(home) = original_home {
-            std::env::set_var("HOME", home);
+            crate::environment::test::set_var("HOME", home);
         } else {
-            std::env::remove_var("HOME");
+            crate::environment::test::remove_var("HOME");
         }
         let _ = fs::remove_dir_all(temp_home).await;
     }
 
     #[test]
     async fn persist_active_workspace_marker_is_cleared_for_default_config_dir() {
-        let _env_guard = env_override_lock().await;
+        let _env_guard = env_override_lock();
         let temp_home =
             std::env::temp_dir().join(format!("gloamy_test_home_{}", uuid::Uuid::new_v4()));
         let default_config_dir = temp_home.join(".gloamy");
         let custom_config_dir = temp_home.join("profiles").join("custom-profile");
         let marker_path = default_config_dir.join(ACTIVE_WORKSPACE_STATE_FILE);
 
-        let original_home = std::env::var("HOME").ok();
-        std::env::set_var("HOME", &temp_home);
+        let original_home = crate::environment::var("HOME").ok();
+        crate::environment::test::set_var("HOME", &temp_home);
 
         persist_active_workspace_config_dir(&custom_config_dir)
             .await
@@ -7511,163 +7627,163 @@ default_model = "legacy-model"
         assert!(!marker_path.exists());
 
         if let Some(home) = original_home {
-            std::env::set_var("HOME", home);
+            crate::environment::test::set_var("HOME", home);
         } else {
-            std::env::remove_var("HOME");
+            crate::environment::test::remove_var("HOME");
         }
         let _ = fs::remove_dir_all(temp_home).await;
     }
 
     #[test]
     async fn env_override_empty_values_ignored() {
-        let _env_guard = env_override_lock().await;
+        let _env_guard = env_override_lock();
         let mut config = Config::default();
         let original_provider = config.default_provider.clone();
 
-        std::env::set_var("GLOAMY_PROVIDER", "");
+        crate::environment::test::set_var("GLOAMY_PROVIDER", "");
         config.apply_env_overrides();
         assert_eq!(config.default_provider, original_provider);
 
-        std::env::remove_var("GLOAMY_PROVIDER");
+        crate::environment::test::remove_var("GLOAMY_PROVIDER");
     }
 
     #[test]
     async fn env_override_gateway_port() {
-        let _env_guard = env_override_lock().await;
+        let _env_guard = env_override_lock();
         let mut config = Config::default();
         assert_eq!(config.gateway.port, 42617);
 
-        std::env::set_var("GLOAMY_GATEWAY_PORT", "8080");
+        crate::environment::test::set_var("GLOAMY_GATEWAY_PORT", "8080");
         config.apply_env_overrides();
         assert_eq!(config.gateway.port, 8080);
 
-        std::env::remove_var("GLOAMY_GATEWAY_PORT");
+        crate::environment::test::remove_var("GLOAMY_GATEWAY_PORT");
     }
 
     #[test]
     async fn env_override_port_fallback() {
-        let _env_guard = env_override_lock().await;
+        let _env_guard = env_override_lock();
         let mut config = Config::default();
 
-        std::env::remove_var("GLOAMY_GATEWAY_PORT");
-        std::env::set_var("PORT", "9000");
+        crate::environment::test::remove_var("GLOAMY_GATEWAY_PORT");
+        crate::environment::test::set_var("PORT", "9000");
         config.apply_env_overrides();
         assert_eq!(config.gateway.port, 9000);
 
-        std::env::remove_var("PORT");
+        crate::environment::test::remove_var("PORT");
     }
 
     #[test]
     async fn env_override_gateway_host() {
-        let _env_guard = env_override_lock().await;
+        let _env_guard = env_override_lock();
         let mut config = Config::default();
         assert_eq!(config.gateway.host, "127.0.0.1");
 
-        std::env::set_var("GLOAMY_GATEWAY_HOST", "0.0.0.0");
+        crate::environment::test::set_var("GLOAMY_GATEWAY_HOST", "0.0.0.0");
         config.apply_env_overrides();
         assert_eq!(config.gateway.host, "0.0.0.0");
 
-        std::env::remove_var("GLOAMY_GATEWAY_HOST");
+        crate::environment::test::remove_var("GLOAMY_GATEWAY_HOST");
     }
 
     #[test]
     async fn env_override_host_fallback() {
-        let _env_guard = env_override_lock().await;
+        let _env_guard = env_override_lock();
         let mut config = Config::default();
 
-        std::env::remove_var("GLOAMY_GATEWAY_HOST");
-        std::env::set_var("HOST", "0.0.0.0");
+        crate::environment::test::remove_var("GLOAMY_GATEWAY_HOST");
+        crate::environment::test::set_var("HOST", "0.0.0.0");
         config.apply_env_overrides();
         assert_eq!(config.gateway.host, "0.0.0.0");
 
-        std::env::remove_var("HOST");
+        crate::environment::test::remove_var("HOST");
     }
 
     #[test]
     async fn env_override_temperature() {
-        let _env_guard = env_override_lock().await;
+        let _env_guard = env_override_lock();
         let mut config = Config::default();
 
-        std::env::set_var("GLOAMY_TEMPERATURE", "0.5");
+        crate::environment::test::set_var("GLOAMY_TEMPERATURE", "0.5");
         config.apply_env_overrides();
         assert!((config.default_temperature - 0.5).abs() < f64::EPSILON);
 
-        std::env::remove_var("GLOAMY_TEMPERATURE");
+        crate::environment::test::remove_var("GLOAMY_TEMPERATURE");
     }
 
     #[test]
     async fn env_override_temperature_out_of_range_ignored() {
-        let _env_guard = env_override_lock().await;
+        let _env_guard = env_override_lock();
         // Clean up any leftover env vars from other tests
-        std::env::remove_var("GLOAMY_TEMPERATURE");
+        crate::environment::test::remove_var("GLOAMY_TEMPERATURE");
 
         let mut config = Config::default();
         let original_temp = config.default_temperature;
 
         // Temperature > 2.0 should be ignored
-        std::env::set_var("GLOAMY_TEMPERATURE", "3.0");
+        crate::environment::test::set_var("GLOAMY_TEMPERATURE", "3.0");
         config.apply_env_overrides();
         assert!(
             (config.default_temperature - original_temp).abs() < f64::EPSILON,
             "Temperature 3.0 should be ignored (out of range)"
         );
 
-        std::env::remove_var("GLOAMY_TEMPERATURE");
+        crate::environment::test::remove_var("GLOAMY_TEMPERATURE");
     }
 
     #[test]
     async fn env_override_reasoning_enabled() {
-        let _env_guard = env_override_lock().await;
+        let _env_guard = env_override_lock();
         let mut config = Config::default();
         assert_eq!(config.runtime.reasoning_enabled, None);
 
-        std::env::set_var("GLOAMY_REASONING_ENABLED", "false");
+        crate::environment::test::set_var("GLOAMY_REASONING_ENABLED", "false");
         config.apply_env_overrides();
         assert_eq!(config.runtime.reasoning_enabled, Some(false));
 
-        std::env::set_var("GLOAMY_REASONING_ENABLED", "true");
+        crate::environment::test::set_var("GLOAMY_REASONING_ENABLED", "true");
         config.apply_env_overrides();
         assert_eq!(config.runtime.reasoning_enabled, Some(true));
 
-        std::env::remove_var("GLOAMY_REASONING_ENABLED");
+        crate::environment::test::remove_var("GLOAMY_REASONING_ENABLED");
     }
 
     #[test]
     async fn env_override_reasoning_invalid_value_ignored() {
-        let _env_guard = env_override_lock().await;
+        let _env_guard = env_override_lock();
         let mut config = Config::default();
         config.runtime.reasoning_enabled = Some(false);
 
-        std::env::set_var("GLOAMY_REASONING_ENABLED", "maybe");
+        crate::environment::test::set_var("GLOAMY_REASONING_ENABLED", "maybe");
         config.apply_env_overrides();
         assert_eq!(config.runtime.reasoning_enabled, Some(false));
 
-        std::env::remove_var("GLOAMY_REASONING_ENABLED");
+        crate::environment::test::remove_var("GLOAMY_REASONING_ENABLED");
     }
 
     #[test]
     async fn env_override_invalid_port_ignored() {
-        let _env_guard = env_override_lock().await;
+        let _env_guard = env_override_lock();
         let mut config = Config::default();
         let original_port = config.gateway.port;
 
-        std::env::set_var("PORT", "not_a_number");
+        crate::environment::test::set_var("PORT", "not_a_number");
         config.apply_env_overrides();
         assert_eq!(config.gateway.port, original_port);
 
-        std::env::remove_var("PORT");
+        crate::environment::test::remove_var("PORT");
     }
 
     #[test]
     async fn env_override_web_search_config() {
-        let _env_guard = env_override_lock().await;
+        let _env_guard = env_override_lock();
         let mut config = Config::default();
 
-        std::env::set_var("WEB_SEARCH_ENABLED", "false");
-        std::env::set_var("WEB_SEARCH_PROVIDER", "brave");
-        std::env::set_var("WEB_SEARCH_MAX_RESULTS", "7");
-        std::env::set_var("WEB_SEARCH_TIMEOUT_SECS", "20");
-        std::env::set_var("BRAVE_API_KEY", "brave-test-key");
+        crate::environment::test::set_var("WEB_SEARCH_ENABLED", "false");
+        crate::environment::test::set_var("WEB_SEARCH_PROVIDER", "brave");
+        crate::environment::test::set_var("WEB_SEARCH_MAX_RESULTS", "7");
+        crate::environment::test::set_var("WEB_SEARCH_TIMEOUT_SECS", "20");
+        crate::environment::test::set_var("BRAVE_API_KEY", "brave-test-key");
 
         config.apply_env_overrides();
 
@@ -7680,40 +7796,40 @@ default_model = "legacy-model"
             Some("brave-test-key")
         );
 
-        std::env::remove_var("WEB_SEARCH_ENABLED");
-        std::env::remove_var("WEB_SEARCH_PROVIDER");
-        std::env::remove_var("WEB_SEARCH_MAX_RESULTS");
-        std::env::remove_var("WEB_SEARCH_TIMEOUT_SECS");
-        std::env::remove_var("BRAVE_API_KEY");
+        crate::environment::test::remove_var("WEB_SEARCH_ENABLED");
+        crate::environment::test::remove_var("WEB_SEARCH_PROVIDER");
+        crate::environment::test::remove_var("WEB_SEARCH_MAX_RESULTS");
+        crate::environment::test::remove_var("WEB_SEARCH_TIMEOUT_SECS");
+        crate::environment::test::remove_var("BRAVE_API_KEY");
     }
 
     #[test]
     async fn env_override_web_search_invalid_values_ignored() {
-        let _env_guard = env_override_lock().await;
+        let _env_guard = env_override_lock();
         let mut config = Config::default();
         let original_max_results = config.web_search.max_results;
         let original_timeout = config.web_search.timeout_secs;
 
-        std::env::set_var("WEB_SEARCH_MAX_RESULTS", "99");
-        std::env::set_var("WEB_SEARCH_TIMEOUT_SECS", "0");
+        crate::environment::test::set_var("WEB_SEARCH_MAX_RESULTS", "99");
+        crate::environment::test::set_var("WEB_SEARCH_TIMEOUT_SECS", "0");
 
         config.apply_env_overrides();
 
         assert_eq!(config.web_search.max_results, original_max_results);
         assert_eq!(config.web_search.timeout_secs, original_timeout);
 
-        std::env::remove_var("WEB_SEARCH_MAX_RESULTS");
-        std::env::remove_var("WEB_SEARCH_TIMEOUT_SECS");
+        crate::environment::test::remove_var("WEB_SEARCH_MAX_RESULTS");
+        crate::environment::test::remove_var("WEB_SEARCH_TIMEOUT_SECS");
     }
 
     #[test]
     async fn env_override_storage_provider_config() {
-        let _env_guard = env_override_lock().await;
+        let _env_guard = env_override_lock();
         let mut config = Config::default();
 
-        std::env::set_var("GLOAMY_STORAGE_PROVIDER", "postgres");
-        std::env::set_var("GLOAMY_STORAGE_DB_URL", "postgres://example/db");
-        std::env::set_var("GLOAMY_STORAGE_CONNECT_TIMEOUT_SECS", "15");
+        crate::environment::test::set_var("GLOAMY_STORAGE_PROVIDER", "postgres");
+        crate::environment::test::set_var("GLOAMY_STORAGE_DB_URL", "postgres://example/db");
+        crate::environment::test::set_var("GLOAMY_STORAGE_CONNECT_TIMEOUT_SECS", "15");
 
         config.apply_env_overrides();
 
@@ -7727,9 +7843,9 @@ default_model = "legacy-model"
             Some(15)
         );
 
-        std::env::remove_var("GLOAMY_STORAGE_PROVIDER");
-        std::env::remove_var("GLOAMY_STORAGE_DB_URL");
-        std::env::remove_var("GLOAMY_STORAGE_CONNECT_TIMEOUT_SECS");
+        crate::environment::test::remove_var("GLOAMY_STORAGE_PROVIDER");
+        crate::environment::test::remove_var("GLOAMY_STORAGE_DB_URL");
+        crate::environment::test::remove_var("GLOAMY_STORAGE_CONNECT_TIMEOUT_SECS");
     }
 
     #[test]
@@ -7750,17 +7866,17 @@ default_model = "legacy-model"
 
     #[test]
     async fn env_override_proxy_scope_services() {
-        let _env_guard = env_override_lock().await;
+        let _env_guard = env_override_lock();
         clear_proxy_env_test_vars();
 
         let mut config = Config::default();
-        std::env::set_var("GLOAMY_PROXY_ENABLED", "true");
-        std::env::set_var("GLOAMY_HTTP_PROXY", "http://127.0.0.1:7890");
-        std::env::set_var(
+        crate::environment::test::set_var("GLOAMY_PROXY_ENABLED", "true");
+        crate::environment::test::set_var("GLOAMY_HTTP_PROXY", "http://127.0.0.1:7890");
+        crate::environment::test::set_var(
             "GLOAMY_PROXY_SERVICES",
             "provider.openai, tool.http_request",
         );
-        std::env::set_var("GLOAMY_PROXY_SCOPE", "services");
+        crate::environment::test::set_var("GLOAMY_PROXY_SCOPE", "services");
 
         config.apply_env_overrides();
 
@@ -7775,36 +7891,48 @@ default_model = "legacy-model"
         assert!(!config.proxy.should_apply_to_service("provider.anthropic"));
 
         clear_proxy_env_test_vars();
+        set_runtime_proxy_config(ProxyConfig::default());
     }
 
     #[test]
-    async fn env_override_proxy_scope_environment_applies_process_env() {
-        let _env_guard = env_override_lock().await;
+    async fn env_override_proxy_scope_environment_applies_managed_overlay() {
+        let _env_guard = env_override_lock();
         clear_proxy_env_test_vars();
+        let inherited_environment: HashMap<_, _> = std::env::vars_os().collect();
 
         let mut config = Config::default();
-        std::env::set_var("GLOAMY_PROXY_ENABLED", "true");
-        std::env::set_var("GLOAMY_PROXY_SCOPE", "environment");
-        std::env::set_var("GLOAMY_HTTP_PROXY", "http://127.0.0.1:7890");
-        std::env::set_var("GLOAMY_HTTPS_PROXY", "http://127.0.0.1:7891");
-        std::env::set_var("GLOAMY_NO_PROXY", "localhost,127.0.0.1");
+        crate::environment::test::set_var("GLOAMY_PROXY_ENABLED", "true");
+        crate::environment::test::set_var("GLOAMY_PROXY_SCOPE", "environment");
+        crate::environment::test::set_var("GLOAMY_HTTP_PROXY", "http://127.0.0.1:7890");
+        crate::environment::test::set_var("GLOAMY_HTTPS_PROXY", "http://127.0.0.1:7891");
+        crate::environment::test::set_var("GLOAMY_NO_PROXY", "localhost,127.0.0.1");
 
         config.apply_env_overrides();
 
         assert_eq!(config.proxy.scope, ProxyScope::Environment);
+        assert!(config.proxy.should_apply_to_service("provider.openai"));
         assert_eq!(
-            std::env::var("HTTP_PROXY").ok().as_deref(),
+            std::env::vars_os().collect::<HashMap<_, _>>(),
+            inherited_environment
+        );
+        let overlay = crate::environment::proxy_overlay_snapshot();
+        assert_eq!(
+            overlay.get("HTTP_PROXY").and_then(Option::as_deref),
             Some("http://127.0.0.1:7890")
         );
         assert_eq!(
-            std::env::var("HTTPS_PROXY").ok().as_deref(),
+            crate::environment::var("HTTPS_PROXY").ok().as_deref(),
             Some("http://127.0.0.1:7891")
         );
-        assert!(std::env::var("NO_PROXY")
-            .ok()
-            .is_some_and(|value| value.contains("localhost")));
+        assert!(
+            crate::environment::var("NO_PROXY")
+                .ok()
+                .is_some_and(|value| value.contains("localhost"))
+        );
 
         clear_proxy_env_test_vars();
+        ProxyConfig::clear_environment_overlay();
+        set_runtime_proxy_config(ProxyConfig::default());
     }
 
     fn runtime_proxy_cache_contains(cache_key: &str) -> bool {
@@ -7816,6 +7944,7 @@ default_model = "legacy-model"
 
     #[test]
     async fn runtime_proxy_client_cache_reuses_default_profile_key() {
+        let _environment_lock = env_override_lock();
         let service_key = format!(
             "provider.cache_test.{}",
             std::time::SystemTime::now()
@@ -7837,6 +7966,7 @@ default_model = "legacy-model"
 
     #[test]
     async fn set_runtime_proxy_config_clears_runtime_proxy_client_cache() {
+        let _environment_lock = env_override_lock();
         let service_key = format!(
             "provider.cache_timeout_test.{}",
             std::time::SystemTime::now()
@@ -7852,6 +7982,68 @@ default_model = "legacy-model"
 
         set_runtime_proxy_config(ProxyConfig::default());
         assert!(!runtime_proxy_cache_contains(&cache_key));
+    }
+
+    #[tokio::test]
+    async fn service_proxy_routes_only_selected_gloamy_clients() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let _environment_lock = env_override_lock();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let proxy_address = listener.local_addr().unwrap();
+        let proxy_server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = vec![0_u8; 2048];
+            let read = stream.read(&mut request).await.unwrap();
+            request.truncate(read);
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok")
+                .await
+                .unwrap();
+            let second_connection =
+                tokio::time::timeout(std::time::Duration::from_millis(250), listener.accept())
+                    .await
+                    .is_ok();
+            (
+                String::from_utf8_lossy(&request).into_owned(),
+                second_connection,
+            )
+        });
+
+        set_runtime_proxy_config(ProxyConfig {
+            enabled: true,
+            http_proxy: Some(format!("http://{proxy_address}")),
+            https_proxy: None,
+            all_proxy: None,
+            no_proxy: Vec::new(),
+            scope: ProxyScope::Services,
+            services: vec!["tool.http_request".to_string()],
+        });
+
+        let selected = build_runtime_proxy_client_with_timeouts("tool.http_request", 2, 1);
+        let response = selected
+            .get("http://proxy-route-test.invalid/resource")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+
+        let unselected = build_runtime_proxy_client_with_timeouts("provider.anthropic", 2, 1);
+        assert!(
+            unselected
+                .get("http://proxy-route-test.invalid/resource")
+                .send()
+                .await
+                .is_err()
+        );
+
+        let (request, second_connection) = proxy_server.await.unwrap();
+        assert!(request.starts_with("GET http://proxy-route-test.invalid/resource "));
+        assert!(
+            !second_connection,
+            "unselected client was routed through proxy"
+        );
+        set_runtime_proxy_config(ProxyConfig::default());
     }
 
     #[test]
@@ -8191,9 +8383,11 @@ default_model = "legacy-model"
         let error = config
             .validate()
             .expect_err("expected tts validation failure");
-        assert!(error
-            .to_string()
-            .contains("tts.max_input_chars must be greater than 0"));
+        assert!(
+            error
+                .to_string()
+                .contains("tts.max_input_chars must be greater than 0")
+        );
     }
 
     #[test]

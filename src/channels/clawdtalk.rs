@@ -57,15 +57,21 @@ impl ChannelConfig for ClawdTalkConfig {
 impl ClawdTalkChannel {
     /// Create a new ClawdTalk channel
     pub fn new(config: ClawdTalkConfig) -> Self {
+        let builder = Client::builder().timeout(std::time::Duration::from_secs(30));
+        let client = crate::config::apply_runtime_proxy_to_builder(builder, "channel.clawdtalk")
+            .build()
+            .unwrap_or_else(|_| {
+                Client::builder()
+                    .no_proxy()
+                    .build()
+                    .unwrap_or_else(|_| Client::new())
+            });
         Self {
             api_key: config.api_key,
             connection_id: config.connection_id,
             from_number: config.from_number,
             allowed_destinations: config.allowed_destinations,
-            client: Client::builder()
-                .timeout(std::time::Duration::from_secs(30))
-                .build()
-                .unwrap_or_else(|_| Client::new()),
+            client,
             webhook_secret: config.webhook_secret,
         }
     }

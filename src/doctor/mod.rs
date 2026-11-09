@@ -909,7 +909,7 @@ fn check_environment(items: &mut Vec<DiagItem>) {
     check_command_available("git", &["--version"], cat, items);
 
     // Shell
-    let shell = std::env::var("SHELL").unwrap_or_default();
+    let shell = crate::environment::var("SHELL").unwrap_or_default();
     if shell.is_empty() {
         items.push(DiagItem::warn(cat, "$SHELL not set"));
     } else {
@@ -917,7 +917,7 @@ fn check_environment(items: &mut Vec<DiagItem>) {
     }
 
     // HOME
-    if std::env::var("HOME").is_ok() || std::env::var("USERPROFILE").is_ok() {
+    if crate::environment::var("HOME").is_ok() || crate::environment::var("USERPROFILE").is_ok() {
         items.push(DiagItem::ok(cat, "home directory env set"));
     } else {
         items.push(DiagItem::error(
@@ -1260,10 +1260,12 @@ mod tests {
         let second = workspace_probe_path(tmp.path());
 
         assert_ne!(first, second);
-        assert!(first
-            .file_name()
-            .and_then(|name| name.to_str())
-            .is_some_and(|name| name.starts_with(".gloamy_doctor_probe_")));
+        assert!(
+            first
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with(".gloamy_doctor_probe_"))
+        );
     }
 
     #[test]

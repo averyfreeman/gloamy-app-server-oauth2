@@ -53,11 +53,11 @@ impl TelnyxProvider {
         let resolved_key = resolve_telnyx_api_key(api_key);
         Self {
             api_key: resolved_key,
-            client: Client::builder()
-                .timeout(std::time::Duration::from_secs(120))
-                .connect_timeout(std::time::Duration::from_secs(10))
-                .build()
-                .unwrap_or_else(|_| Client::new()),
+            client: crate::config::build_runtime_proxy_client_with_timeouts(
+                "provider.telnyx",
+                120,
+                10,
+            ),
         }
     }
 
@@ -104,7 +104,7 @@ fn resolve_telnyx_api_key(api_key: Option<&str>) -> Option<String> {
     }
 
     // Try Telnyx-specific env var first
-    if let Ok(key) = std::env::var("TELNYX_API_KEY") {
+    if let Ok(key) = crate::environment::var("TELNYX_API_KEY") {
         let key = key.trim();
         if !key.is_empty() {
             return Some(key.to_string());
@@ -113,7 +113,7 @@ fn resolve_telnyx_api_key(api_key: Option<&str>) -> Option<String> {
 
     // Fall back to generic env vars
     for env_var in ["GLOAMY_API_KEY", "API_KEY"] {
-        if let Ok(key) = std::env::var(env_var) {
+        if let Ok(key) = crate::environment::var(env_var) {
             let key = key.trim();
             if !key.is_empty() {
                 return Some(key.to_string());

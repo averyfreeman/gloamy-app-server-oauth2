@@ -1,8 +1,8 @@
-use crate::auth::openai_oauth::extract_account_id_from_jwt;
 use crate::auth::AuthService;
+use crate::auth::openai_oauth::extract_account_id_from_jwt;
 use crate::multimodal;
-use crate::providers::traits::{ChatMessage, Provider, ProviderCapabilities};
 use crate::providers::ProviderRuntimeOptions;
+use crate::providers::traits::{ChatMessage, Provider, ProviderCapabilities};
 use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -97,17 +97,25 @@ impl OpenAiCodexProvider {
         let auth = AuthService::new(&state_dir, options.secrets_encrypt);
         let responses_url = resolve_responses_url(options)?;
 
+        let builder = Client::builder()
+            .timeout(std::time::Duration::from_secs(120))
+            .connect_timeout(std::time::Duration::from_secs(10));
+        let client = crate::config::apply_runtime_proxy_to_builder(builder, "provider.openai")
+            .build()
+            .unwrap_or_else(|_| {
+                Client::builder()
+                    .no_proxy()
+                    .build()
+                    .unwrap_or_else(|_| Client::new())
+            });
+
         Ok(Self {
             auth,
             auth_profile_override: options.auth_profile_override.clone(),
             custom_endpoint: !is_default_responses_url(&responses_url),
             responses_url,
             gateway_api_key: gateway_api_key.map(ToString::to_string),
-            client: Client::builder()
-                .timeout(std::time::Duration::from_secs(120))
-                .connect_timeout(std::time::Duration::from_secs(10))
-                .build()
-                .unwrap_or_else(|_| Client::new()),
+            client,
         })
     }
 }
@@ -150,14 +158,14 @@ fn build_responses_url(base_or_endpoint: &str) -> anyhow::Result<String> {
 }
 
 fn resolve_responses_url(options: &ProviderRuntimeOptions) -> anyhow::Result<String> {
-    if let Some(endpoint) = std::env::var(CODEX_RESPONSES_URL_ENV)
+    if let Some(endpoint) = crate::environment::var(CODEX_RESPONSES_URL_ENV)
         .ok()
         .and_then(|value| first_nonempty(Some(&value)))
     {
         return build_responses_url(&endpoint);
     }
 
-    if let Some(base_url) = std::env::var(CODEX_BASE_URL_ENV)
+    if let Some(base_url) = crate::environment::var(CODEX_BASE_URL_ENV)
         .ok()
         .and_then(|value| first_nonempty(Some(&value)))
     {
@@ -304,7 +312,7 @@ fn clamp_reasoning_effort(model: &str, effort: &str) -> String {
 }
 
 fn resolve_reasoning_effort(model_id: &str) -> String {
-    let raw = std::env::var("GLOAMY_CODEX_REASONING_EFFORT")
+    let raw = crate::environment::var("GLOAMY_CODEX_REASONING_EFFORT")
         .ok()
         .and_then(|value| first_nonempty(Some(&value)))
         .unwrap_or_else(|| "xhigh".to_string())
@@ -678,10 +686,10 @@ mod tests {
 
     impl EnvGuard {
         fn set(key: &'static str, value: Option<&str>) -> Self {
-            let original = std::env::var(key).ok();
+            let original = crate::environment::var(key).ok();
             match value {
-                Some(next) => std::env::set_var(key, next),
-                None => std::env::remove_var(key),
+                Some(next) => crate::environment::test::set_var(key, next),
+                None => crate::environment::test::remove_var(key),
             }
             Self { key, original }
         }
@@ -690,9 +698,9 @@ mod tests {
     impl Drop for EnvGuard {
         fn drop(&mut self) {
             if let Some(original) = self.original.as_deref() {
-                std::env::set_var(self.key, original);
+                crate::environment::test::set_var(self.key, original);
             } else {
-                std::env::remove_var(self.key);
+                crate::environment::test::remove_var(self.key);
             }
         }
     }

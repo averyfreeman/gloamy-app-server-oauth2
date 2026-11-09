@@ -2,8 +2,8 @@ use parking_lot::Mutex;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::Instant;
 
 /// How much autonomy the agent has
@@ -179,7 +179,7 @@ impl Default for SecurityPolicy {
 }
 
 fn home_dir() -> Option<PathBuf> {
-    std::env::var_os("HOME").map(PathBuf::from)
+    crate::environment::var_os("HOME").map(PathBuf::from)
 }
 
 /// Env vars permitted in `$VAR` / `"$VAR/..."` patterns for shell policy checks.
@@ -210,23 +210,23 @@ fn expand_user_path(path: &str) -> PathBuf {
     }
 
     if let Some(rest) = path.strip_prefix("$TMPDIR/") {
-        if let Ok(tmp) = std::env::var("TMPDIR") {
+        if let Ok(tmp) = crate::environment::var("TMPDIR") {
             return PathBuf::from(tmp).join(rest);
         }
     }
     if path == "$TMPDIR" {
-        return std::env::var("TMPDIR")
+        return crate::environment::var("TMPDIR")
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from(path));
     }
 
     if let Some(rest) = path.strip_prefix("$PWD/") {
-        if let Ok(pwd) = std::env::var("PWD") {
+        if let Ok(pwd) = crate::environment::var("PWD") {
             return PathBuf::from(pwd).join(rest);
         }
     }
     if path == "$PWD" {
-        return std::env::var("PWD")
+        return crate::environment::var("PWD")
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from(path));
     }
@@ -957,11 +957,7 @@ fn attached_short_option_value(token: &str) -> Option<&str> {
         return None;
     }
     let value = body[1..].trim_start_matches('=').trim();
-    if value.is_empty() {
-        None
-    } else {
-        Some(value)
-    }
+    if value.is_empty() { None } else { Some(value) }
 }
 
 fn redirection_target(token: &str) -> Option<&str> {
@@ -2118,9 +2114,10 @@ mod tests {
     #[test]
     fn enforce_tool_operation_read_allowed_in_readonly_mode() {
         let p = readonly_policy();
-        assert!(p
-            .enforce_tool_operation(ToolOperation::Read, "memory_recall")
-            .is_ok());
+        assert!(
+            p.enforce_tool_operation(ToolOperation::Read, "memory_recall")
+                .is_ok()
+        );
     }
 
     #[test]
@@ -2174,9 +2171,10 @@ mod tests {
         };
 
         assert!(p.requires_medium_risk_approval());
-        assert!(p
-            .validate_command_execution("touch test.txt", false)
-            .is_err());
+        assert!(
+            p.validate_command_execution("touch test.txt", false)
+                .is_err()
+        );
 
         p.set_command_risk_policy(false, p.blocks_high_risk_commands());
 
@@ -2504,7 +2502,7 @@ mod tests {
         let workspace = PathBuf::from("/tmp/test-workspace");
         let policy = SecurityPolicy::from_config(&autonomy_config, &workspace);
 
-        let expected_home_root = if let Some(home) = std::env::var_os("HOME") {
+        let expected_home_root = if let Some(home) = crate::environment::var_os("HOME") {
             PathBuf::from(home).join("Desktop")
         } else {
             PathBuf::from("~/Desktop")
@@ -3110,7 +3108,7 @@ mod tests {
         };
 
         // Path outside workspace should be allowed when workspace_only=false
-        let outside = std::env::var_os("HOME")
+        let outside = crate::environment::var_os("HOME")
             .map(std::path::PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("/home"))
             .join("gloamy_outside_ws");

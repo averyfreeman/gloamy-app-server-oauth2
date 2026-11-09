@@ -28,7 +28,7 @@
 
 use super::traits::{Channel, ChannelMessage, SendMessage};
 use super::whatsapp_storage::RusqliteStore;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use parking_lot::Mutex;
 use std::sync::Arc;
@@ -314,7 +314,7 @@ impl Channel for WhatsAppWebChannel {
 
         // Create transport factory
         let mut transport_factory = TokioWebSocketTransportFactory::new();
-        if let Ok(ws_url) = std::env::var("WHATSAPP_WS_URL") {
+        if let Ok(ws_url) = crate::environment::var("WHATSAPP_WS_URL") {
             transport_factory = transport_factory.with_url(ws_url);
         }
 

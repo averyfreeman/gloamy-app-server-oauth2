@@ -1,6 +1,6 @@
 use crate::config::schema::{
-    default_nostr_relays, DingTalkConfig, IrcConfig, LarkReceiveMode, LinqConfig,
-    NextcloudTalkConfig, NostrConfig, QQConfig, SignalConfig, StreamMode, WhatsAppConfig,
+    DingTalkConfig, IrcConfig, LarkReceiveMode, LinqConfig, NextcloudTalkConfig, NostrConfig,
+    QQConfig, SignalConfig, StreamMode, WhatsAppConfig, default_nostr_relays,
 };
 use crate::config::{
     AutonomyConfig, BrowserConfig, ChannelsConfig, ComposioConfig, Config, DelegateAgentConfig,
@@ -16,7 +16,7 @@ use crate::providers::{
     is_moonshot_alias, is_qianfan_alias, is_qwen_alias, is_qwen_oauth_alias, is_zai_alias,
     is_zai_cn_alias,
 };
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use console::style;
 use dialoguer::{Confirm, Input, Select};
 use serde::{Deserialize, Serialize};
@@ -128,7 +128,23 @@ enum InteractiveOnboardingMode {
     UpdateProviderOnly,
 }
 
+#[derive(Debug, Clone)]
+pub struct OnboardingOutcome {
+    pub config: Config,
+    pub start_channels: bool,
+}
+
+impl OnboardingOutcome {
+    pub fn channels_to_start(self) -> Option<Config> {
+        self.start_channels.then_some(self.config)
+    }
+}
+
 pub async fn run_wizard(force: bool) -> Result<Config> {
+    Ok(run_wizard_with_outcome(force).await?.config)
+}
+
+pub async fn run_wizard_with_outcome(force: bool) -> Result<OnboardingOutcome> {
     println!("{}", style(BANNER).cyan().bold());
 
     println!("  {}", style("Gloamy says hii!").white().bold());
@@ -238,6 +254,7 @@ pub async fn run_wizard(force: bool) -> Result<Config> {
     // ── Offer to launch channels immediately ─────────────────────
     let has_channels = has_launchable_channels(&config.channels_config);
 
+    let mut start_channels = false;
     if has_channels && config.api_key.is_some() {
         let launch: bool = Confirm::new()
             .with_prompt(format!(
@@ -255,16 +272,22 @@ pub async fn run_wizard(force: bool) -> Result<Config> {
                 style("Starting channel server...").white().bold()
             );
             println!();
-            // Signal to main.rs to call start_channels after wizard returns
-            std::env::set_var("GLOAMY_AUTOSTART_CHANNELS", "1");
+            start_channels = true;
         }
     }
 
-    Ok(config)
+    Ok(OnboardingOutcome {
+        config,
+        start_channels,
+    })
 }
 
 /// Interactive repair flow: rerun channel setup only without redoing full onboarding.
 pub async fn run_channels_repair_wizard() -> Result<Config> {
+    Ok(run_channels_repair_wizard_with_outcome().await?.config)
+}
+
+pub async fn run_channels_repair_wizard_with_outcome() -> Result<OnboardingOutcome> {
     println!("{}", style(BANNER).cyan().bold());
     println!(
         "  {}",
@@ -290,6 +313,7 @@ pub async fn run_channels_repair_wizard() -> Result<Config> {
 
     let has_channels = has_launchable_channels(&config.channels_config);
 
+    let mut start_channels = false;
     if has_channels && config.api_key.is_some() {
         let launch: bool = Confirm::new()
             .with_prompt(format!(
@@ -307,16 +331,21 @@ pub async fn run_channels_repair_wizard() -> Result<Config> {
                 style("Starting channel server...").white().bold()
             );
             println!();
-            // Signal to main.rs to call start_channels after wizard returns
-            std::env::set_var("GLOAMY_AUTOSTART_CHANNELS", "1");
+            start_channels = true;
         }
     }
 
-    Ok(config)
+    Ok(OnboardingOutcome {
+        config,
+        start_channels,
+    })
 }
 
 /// Interactive flow: update only provider/model/api key while preserving existing config.
-async fn run_provider_update_wizard(workspace_dir: &Path, config_path: &Path) -> Result<Config> {
+async fn run_provider_update_wizard(
+    workspace_dir: &Path,
+    config_path: &Path,
+) -> Result<OnboardingOutcome> {
     println!();
     println!(
         "  {} Existing config detected. Running provider-only update mode (preserving channels, memory, tunnel, hooks, and other settings).",
@@ -353,6 +382,7 @@ async fn run_provider_update_wizard(workspace_dir: &Path, config_path: &Path) ->
     print_summary(&config);
 
     let has_channels = has_launchable_channels(&config.channels_config);
+    let mut start_channels = false;
     if has_channels && config.api_key.is_some() {
         let launch: bool = Confirm::new()
             .with_prompt(format!(
@@ -370,11 +400,14 @@ async fn run_provider_update_wizard(workspace_dir: &Path, config_path: &Path) ->
                 style("Starting channel server...").white().bold()
             );
             println!();
-            std::env::set_var("GLOAMY_AUTOSTART_CHANNELS", "1");
+            start_channels = true;
         }
     }
 
-    Ok(config)
+    Ok(OnboardingOutcome {
+        config,
+        start_channels,
+    })
 }
 
 fn apply_provider_update(
@@ -462,7 +495,7 @@ pub async fn run_quick_setup(
 }
 
 fn resolve_quick_setup_dirs_with_home(home: &Path) -> (PathBuf, PathBuf) {
-    if let Ok(custom_config_dir) = std::env::var("GLOAMY_CONFIG_DIR") {
+    if let Ok(custom_config_dir) = crate::environment::var("GLOAMY_CONFIG_DIR") {
         let trimmed = custom_config_dir.trim();
         if !trimmed.is_empty() {
             let config_dir = PathBuf::from(trimmed);
@@ -470,7 +503,7 @@ fn resolve_quick_setup_dirs_with_home(home: &Path) -> (PathBuf, PathBuf) {
         }
     }
 
-    if let Ok(custom_workspace) = std::env::var("GLOAMY_WORKSPACE") {
+    if let Ok(custom_workspace) = crate::environment::var("GLOAMY_WORKSPACE") {
         let trimmed = custom_workspace.trim();
         if !trimmed.is_empty() {
             return crate::config::schema::resolve_config_dir_for_workspace(&PathBuf::from(
@@ -574,7 +607,7 @@ async fn run_quick_setup_with_home(
 
     // Scaffold minimal workspace files
     let default_ctx = ProjectContext {
-        user_name: std::env::var("USER").unwrap_or_else(|_| "User".into()),
+        user_name: crate::environment::var("USER").unwrap_or_else(|_| "User".into()),
         timezone: "UTC".into(),
         agent_name: "Gloamy".into(),
         communication_style:
@@ -1532,14 +1565,14 @@ fn fetch_live_models_for_provider(
         if provider_name == "ollama" && !ollama_remote {
             None
         } else {
-            std::env::var(provider_env_var(provider_name))
+            crate::environment::var(provider_env_var(provider_name))
                 .ok()
                 .or_else(|| {
                     // Anthropic also accepts OAuth setup-tokens via ANTHROPIC_OAUTH_TOKEN
                     if provider_name == "anthropic" {
-                        std::env::var("ANTHROPIC_OAUTH_TOKEN").ok()
+                        crate::environment::var("ANTHROPIC_OAUTH_TOKEN").ok()
                     } else if provider_name == "minimax" {
-                        std::env::var("MINIMAX_OAUTH_TOKEN").ok()
+                        crate::environment::var("MINIMAX_OAUTH_TOKEN").ok()
                     } else {
                         None
                     }
@@ -2551,7 +2584,7 @@ async fn setup_provider(workspace_dir: &Path) -> Result<(String, String, String,
                     .allow_empty(true)
                     .interact_text()?
             }
-        } else if std::env::var("GEMINI_API_KEY").is_ok() {
+        } else if crate::environment::var("GEMINI_API_KEY").is_ok() {
             print_bullet(&format!(
                 "{} GEMINI_API_KEY environment variable detected!",
                 style("✓").green().bold()
@@ -2568,13 +2601,13 @@ async fn setup_provider(workspace_dir: &Path) -> Result<(String, String, String,
                 .interact_text()?
         }
     } else if canonical_provider_name(provider_name) == "anthropic" {
-        if std::env::var("ANTHROPIC_OAUTH_TOKEN").is_ok() {
+        if crate::environment::var("ANTHROPIC_OAUTH_TOKEN").is_ok() {
             print_bullet(&format!(
                 "{} ANTHROPIC_OAUTH_TOKEN environment variable detected!",
                 style("✓").green().bold()
             ));
             String::new()
-        } else if std::env::var("ANTHROPIC_API_KEY").is_ok() {
+        } else if crate::environment::var("ANTHROPIC_API_KEY").is_ok() {
             print_bullet(&format!(
                 "{} ANTHROPIC_API_KEY environment variable detected!",
                 style("✓").green().bold()
@@ -2606,7 +2639,7 @@ async fn setup_provider(workspace_dir: &Path) -> Result<(String, String, String,
             key
         }
     } else if canonical_provider_name(provider_name) == "qwen-code" {
-        if std::env::var("QWEN_OAUTH_TOKEN").is_ok() {
+        if crate::environment::var("QWEN_OAUTH_TOKEN").is_ok() {
             print_bullet(&format!(
                 "{} QWEN_OAUTH_TOKEN environment variable detected!",
                 style("✓").green().bold()
@@ -2743,11 +2776,11 @@ async fn setup_provider(workspace_dir: &Path) -> Result<(String, String, String,
             && !ollama_remote;
         let has_api_key = !api_key.trim().is_empty()
             || ((canonical_provider != "ollama" || ollama_remote)
-                && std::env::var(provider_env_var(provider_name))
+                && crate::environment::var(provider_env_var(provider_name))
                     .ok()
                     .is_some_and(|value| !value.trim().is_empty()))
             || (provider_name == "minimax"
-                && std::env::var("MINIMAX_OAUTH_TOKEN")
+                && crate::environment::var("MINIMAX_OAUTH_TOKEN")
                     .ok()
                     .is_some_and(|value| !value.trim().is_empty()));
 
@@ -4856,11 +4889,7 @@ fn setup_channels() -> Result<ChannelsConfig> {
                         .with_prompt("  Verification Token (optional, for Webhook mode)")
                         .allow_empty(true)
                         .interact_text()?;
-                    if token.is_empty() {
-                        None
-                    } else {
-                        Some(token)
-                    }
+                    if token.is_empty() { None } else { Some(token) }
                 } else {
                     None
                 };
@@ -5761,6 +5790,22 @@ fn print_summary(config: &Config) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn onboarding_outcome_starts_channels_only_when_selected() {
+        let config = Config::default();
+        let not_selected = OnboardingOutcome {
+            config: config.clone(),
+            start_channels: false,
+        };
+        assert!(not_selected.channels_to_start().is_none());
+
+        let selected = OnboardingOutcome {
+            config: config.clone(),
+            start_channels: true,
+        };
+        assert!(selected.channels_to_start().is_some());
+    }
     use serde_json::json;
     use std::sync::OnceLock;
     use tempfile::TempDir;
@@ -5778,14 +5823,14 @@ mod tests {
 
     impl EnvVarGuard {
         fn set(key: &'static str, value: &str) -> Self {
-            let previous = std::env::var(key).ok();
-            std::env::set_var(key, value);
+            let previous = crate::environment::var(key).ok();
+            crate::environment::test::set_var(key, value);
             Self { key, previous }
         }
 
         fn unset(key: &'static str) -> Self {
-            let previous = std::env::var(key).ok();
-            std::env::remove_var(key);
+            let previous = crate::environment::var(key).ok();
+            crate::environment::test::remove_var(key);
             Self { key, previous }
         }
     }
@@ -5793,9 +5838,9 @@ mod tests {
     impl Drop for EnvVarGuard {
         fn drop(&mut self) {
             if let Some(previous) = &self.previous {
-                std::env::set_var(self.key, previous);
+                crate::environment::test::set_var(self.key, previous);
             } else {
-                std::env::remove_var(self.key);
+                crate::environment::test::remove_var(self.key);
             }
         }
     }
@@ -7077,9 +7122,10 @@ mod tests {
         };
 
         let err = run_models_refresh(&config, None, true).await.unwrap_err();
-        assert!(err
-            .to_string()
-            .contains("does not support live model discovery"));
+        assert!(
+            err.to_string()
+                .contains("does not support live model discovery")
+        );
     }
 
     // ── provider_env_var ────────────────────────────────────────

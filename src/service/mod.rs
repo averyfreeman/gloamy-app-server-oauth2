@@ -600,7 +600,7 @@ fn copy_dir_recursive(source: &Path, target: &Path) -> Result<()> {
 }
 
 fn resolve_invoking_user_config_dir() -> Option<PathBuf> {
-    let sudo_user = std::env::var("SUDO_USER")
+    let sudo_user = crate::environment::var("SUDO_USER")
         .ok()
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty() && value != "root");
@@ -617,7 +617,7 @@ fn resolve_invoking_user_config_dir() -> Option<PathBuf> {
         }
     }
 
-    std::env::var("HOME")
+    crate::environment::var("HOME")
         .ok()
         .map(PathBuf::from)
         .map(|home| home.join(".gloamy"))

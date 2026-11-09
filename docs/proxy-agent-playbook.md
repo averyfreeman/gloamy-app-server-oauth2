@@ -37,20 +37,20 @@ Go to:
 
 - [Section 5](#5-mode-b--proxy-only-for-specific-services)
 
-### 1.3 Export process-wide proxy environment variables
+### 1.3 Apply a Gloamy-managed proxy overlay
 
 1. Use scope `environment`.
-2. Apply with `{"action":"apply_env"}`.
+2. Apply with `{"action":"apply_env"}`. This updates Gloamy's HTTP clients and the environment passed to child commands only when the proxy variables are allowed by the shell environment allowlist.
 3. Verify env snapshot via `{"action":"get"}`.
 
 Go to:
 
-- [Section 6](#6-mode-c--proxy-for-full-process-environment)
+- [Section 6](#6-mode-c--gloamy-wide-proxy-overlay)
 
 ### 1.4 Emergency rollback
 
 1. Disable proxy.
-2. If needed, clear env exports.
+2. If needed, clear Gloamy's proxy overlay.
 3. Re-check runtime and environment snapshots.
 
 Go to:
@@ -61,11 +61,11 @@ Go to:
 
 ## 2. Scope Decision Matrix
 
-| Scope | Affects | Exports env vars | Typical use |
+| Scope | Affects | Changes parent process env | Typical use |
 |---|---|---|---|
-| `gloamy` | Gloamy internal HTTP clients | No | Normal runtime proxying without process-level side effects |
+| `gloamy` | Gloamy internal HTTP clients | No | Normal runtime proxying |
 | `services` | Only selected service keys/selectors | No | Fine-grained routing for specific providers/tools/channels |
-| `environment` | Runtime + process environment proxy variables | Yes | Integrations that require `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY` |
+| `environment` | Gloamy HTTP clients + allowlisted child commands | No | Gloamy-wide proxying, including approved tools that need proxy variables |
 
 ---
 
@@ -131,9 +131,9 @@ Expected behavior:
 
 ---
 
-## 6. Mode C — Proxy for Full Process Environment
+## 6. Mode C — Gloamy-wide Proxy Overlay
 
-Use when you intentionally need exported process env vars (`HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY`) for runtime integrations.
+Use when Gloamy's HTTP clients and approved child commands should use the configured proxy. Gloamy keeps this in a managed overlay; the parent process environment is unchanged.
 
 ### 6.1 Configure and apply environment scope
 
@@ -146,7 +146,9 @@ Use when you intentionally need exported process env vars (`HTTP_PROXY`, `HTTPS_
 Expected behavior:
 
 - Runtime proxy is active.
-- Environment variables are exported for the process.
+- Gloamy's proxy overlay is active for Gloamy HTTP clients.
+- Approved child commands receive proxy variables only when the shell environment allowlist includes them.
+- The parent process environment is unchanged.
 
 ---
 
@@ -159,19 +161,21 @@ Expected behavior:
 {"action":"get"}
 ```
 
-### 7.2 Disable proxy and force-clear env vars
+### 7.2 Disable proxy and clear the Gloamy overlay
 
 ```json
 {"action":"disable","clear_env":true}
 {"action":"get"}
 ```
 
-### 7.3 Keep proxy enabled but clear environment exports only
+### 7.3 Clear the environment-scope overlay
 
 ```json
 {"action":"clear_env"}
 {"action":"get"}
 ```
+
+`clear_env` clears Gloamy's overlay and disables the currently active environment-scope proxy for Gloamy clients. It does not remove or rewrite inherited process variables. Run `apply_env` to reapply the persisted environment-scope proxy.
 
 ---
 

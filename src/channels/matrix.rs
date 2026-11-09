@@ -1,21 +1,21 @@
 use crate::channels::traits::{Channel, ChannelMessage, SendMessage};
 use async_trait::async_trait;
 use matrix_sdk::{
+    Client as MatrixSdkClient, LoopCtrl, Room, RoomState, SessionMeta, SessionTokens,
     authentication::matrix::MatrixSession,
     config::SyncSettings,
     ruma::{
+        OwnedRoomId, OwnedUserId,
         events::room::message::{
             MessageType, OriginalSyncRoomMessageEvent, RoomMessageEventContent,
         },
-        OwnedRoomId, OwnedUserId,
     },
-    Client as MatrixSdkClient, LoopCtrl, Room, RoomState, SessionMeta, SessionTokens,
 };
 use reqwest::Client;
 use serde::Deserialize;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex, OnceCell, RwLock};
+use tokio::sync::{Mutex, OnceCell, RwLock, mpsc};
 
 /// Matrix channel for Matrix Client-Server API.
 /// Uses matrix-sdk for reliable sync and encrypted-room decryption.
@@ -162,7 +162,7 @@ impl MatrixChannel {
             gloamy_dir,
             resolved_room_id_cache: Arc::new(RwLock::new(None)),
             sdk_client: Arc::new(OnceCell::new()),
-            http_client: Client::new(),
+            http_client: crate::config::build_runtime_proxy_client("channel.matrix"),
         }
     }
 
@@ -850,10 +850,12 @@ mod tests {
         assert_eq!(value["msgtype"], "m.text");
         assert_eq!(value["body"], "**hello**");
         assert_eq!(value["format"], "org.matrix.custom.html");
-        assert!(value["formatted_body"]
-            .as_str()
-            .unwrap_or_default()
-            .contains("<strong>hello</strong>"));
+        assert!(
+            value["formatted_body"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("<strong>hello</strong>")
+        );
     }
 
     #[test]
@@ -1082,9 +1084,10 @@ mod tests {
         );
 
         let err = ch.resolve_room_id().await.unwrap_err();
-        assert!(err
-            .to_string()
-            .contains("must start with '!' (room ID) or '#' (room alias)"));
+        assert!(
+            err.to_string()
+                .contains("must start with '!' (room ID) or '#' (room alias)")
+        );
     }
 
     #[tokio::test]

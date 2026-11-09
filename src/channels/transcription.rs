@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use reqwest::multipart::{Form, Part};
 
 use crate::config::TranscriptionConfig;
@@ -59,7 +59,7 @@ pub async fn transcribe_audio(
         )
     })?;
 
-    let api_key = std::env::var("GROQ_API_KEY").context(
+    let api_key = crate::environment::var("GROQ_API_KEY").context(
         "GROQ_API_KEY environment variable is not set — required for voice transcription",
     )?;
 
@@ -126,7 +126,8 @@ mod tests {
     #[tokio::test]
     async fn rejects_missing_api_key() {
         // Ensure the key is absent for this test
-        std::env::remove_var("GROQ_API_KEY");
+        let _api_key_override =
+            crate::environment::test::scoped_remove_var("GROQ_API_KEY");
 
         let data = vec![0u8; 100];
         let config = TranscriptionConfig::default();

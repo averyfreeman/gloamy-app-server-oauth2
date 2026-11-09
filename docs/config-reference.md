@@ -682,7 +682,10 @@ Gloamy recognizes several environment variables for runtime configuration. Prece
 | `GLOAMY_CONFIG_DIR` | Override config directory path (default: `~/.gloamy`) | Config file location |
 | `GLOAMY_PROVIDER` | Override default provider | `default_provider` |
 | `PROVIDER` | Legacy fallback for provider (only when config unset) | `default_provider` |
-| `GLOAMY_AUTOSTART_CHANNELS` | Auto-start channels after onboard wizard | Onboarding behavior |
+
+Environment precedence is: real process environment, workspace `.env`, then values from `config.toml` and application defaults. The workspace `.env` file is parsed into an in-memory source; Gloamy does not export its values back into the parent process. Child commands receive only variables permitted by the shell environment allowlist.
+
+Proxy settings with `scope = "environment"` use a Gloamy-managed overlay. It applies to Gloamy's HTTP clients and to proxy variables explicitly allowed for child commands. It does not change the environment of the running Gloamy process or its parent shell. `proxy_config` actions `apply_env` and `clear_env` apply or clear this overlay.
 
 ### Skills Environment Variables
 

@@ -181,8 +181,8 @@ impl CopilotProvider {
             .unwrap_or_else(|| {
                 // Fall back to a user-specific temp directory to avoid
                 // shared-directory symlink attacks.
-                let user = std::env::var("USER")
-                    .or_else(|_| std::env::var("USERNAME"))
+                let user = crate::environment::var("USER")
+                    .or_else(|_| crate::environment::var("USERNAME"))
                     .unwrap_or_else(|_| "unknown".to_string());
                 std::env::temp_dir().join(format!("gloamy-copilot-{user}"))
             });
@@ -696,12 +696,16 @@ mod tests {
     #[test]
     fn copilot_headers_include_required_fields() {
         let headers = CopilotProvider::COPILOT_HEADERS;
-        assert!(headers
-            .iter()
-            .any(|(header, _)| *header == "Editor-Version"));
-        assert!(headers
-            .iter()
-            .any(|(header, _)| *header == "Editor-Plugin-Version"));
+        assert!(
+            headers
+                .iter()
+                .any(|(header, _)| *header == "Editor-Version")
+        );
+        assert!(
+            headers
+                .iter()
+                .any(|(header, _)| *header == "Editor-Plugin-Version")
+        );
         assert!(headers.iter().any(|(header, _)| *header == "User-Agent"));
     }
 

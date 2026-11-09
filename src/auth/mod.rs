@@ -6,7 +6,7 @@ pub mod profiles;
 
 use crate::auth::openai_oauth::refresh_access_token;
 use crate::auth::profiles::{
-    profile_id, AuthProfile, AuthProfileKind, AuthProfilesData, AuthProfilesStore, TokenSet,
+    AuthProfile, AuthProfileKind, AuthProfilesData, AuthProfilesStore, TokenSet, profile_id,
 };
 use crate::config::Config;
 use anyhow::Result;
@@ -40,7 +40,7 @@ impl AuthService {
     pub fn new(state_dir: &Path, encrypt_secrets: bool) -> Self {
         Self {
             store: AuthProfilesStore::new(state_dir, encrypt_secrets),
-            client: reqwest::Client::new(),
+            client: crate::config::build_runtime_proxy_client("provider.auth"),
         }
     }
 

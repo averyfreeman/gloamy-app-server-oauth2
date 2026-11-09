@@ -149,7 +149,7 @@ impl Tool for ShellTool {
         cmd.env_clear();
 
         for var in collect_allowed_shell_env_vars(&self.security) {
-            if let Ok(val) = std::env::var(&var) {
+            if let Ok(val) = crate::environment::var(&var) {
                 cmd.env(&var, val);
             }
         }
@@ -233,10 +233,12 @@ mod tests {
         let tool = ShellTool::new(test_security(AutonomyLevel::Supervised), test_runtime());
         let schema = tool.parameters_schema();
         assert!(schema["properties"]["command"].is_object());
-        assert!(schema["required"]
-            .as_array()
-            .expect("schema required field should be an array")
-            .contains(&json!("command")));
+        assert!(
+            schema["required"]
+                .as_array()
+                .expect("schema required field should be an array")
+                .contains(&json!("command"))
+        );
         assert!(schema["properties"]["approved"].is_object());
     }
 
@@ -272,11 +274,13 @@ mod tests {
             .await
             .expect("readonly command execution should return a result");
         assert!(!result.success);
-        assert!(result
-            .error
-            .as_ref()
-            .expect("error field should be present for blocked command")
-            .contains("not allowed"));
+        assert!(
+            result
+                .error
+                .as_ref()
+                .expect("error field should be present for blocked command")
+                .contains("not allowed")
+        );
     }
 
     #[tokio::test]
@@ -312,11 +316,13 @@ mod tests {
             .await
             .expect("absolute path argument should be blocked");
         assert!(!result.success);
-        assert!(result
-            .error
-            .as_deref()
-            .unwrap_or("")
-            .contains("Path blocked"));
+        assert!(
+            result
+                .error
+                .as_deref()
+                .unwrap_or("")
+                .contains("Path blocked")
+        );
     }
 
     #[tokio::test]
@@ -327,11 +333,13 @@ mod tests {
             .await
             .expect("option-assigned forbidden path should be blocked");
         assert!(!result.success);
-        assert!(result
-            .error
-            .as_deref()
-            .unwrap_or("")
-            .contains("Path blocked"));
+        assert!(
+            result
+                .error
+                .as_deref()
+                .unwrap_or("")
+                .contains("Path blocked")
+        );
     }
 
     #[tokio::test]
@@ -342,11 +350,13 @@ mod tests {
             .await
             .expect("short option attached forbidden path should be blocked");
         assert!(!result.success);
-        assert!(result
-            .error
-            .as_deref()
-            .unwrap_or("")
-            .contains("Path blocked"));
+        assert!(
+            result
+                .error
+                .as_deref()
+                .unwrap_or("")
+                .contains("Path blocked")
+        );
     }
 
     #[tokio::test]
@@ -357,11 +367,13 @@ mod tests {
             .await
             .expect("tilde-user path should be blocked");
         assert!(!result.success);
-        assert!(result
-            .error
-            .as_deref()
-            .unwrap_or("")
-            .contains("Path blocked"));
+        assert!(
+            result
+                .error
+                .as_deref()
+                .unwrap_or("")
+                .contains("Path blocked")
+        );
     }
 
     #[tokio::test]
@@ -372,11 +384,13 @@ mod tests {
             .await
             .expect("input redirection bypass should be blocked");
         assert!(!result.success);
-        assert!(result
-            .error
-            .as_deref()
-            .unwrap_or("")
-            .contains("not allowed"));
+        assert!(
+            result
+                .error
+                .as_deref()
+                .unwrap_or("")
+                .contains("not allowed")
+        );
     }
 
     fn test_security_with_env_cmd() -> Arc<SecurityPolicy> {
@@ -407,8 +421,8 @@ mod tests {
 
     impl EnvGuard {
         fn set(key: &'static str, value: &str) -> Self {
-            let original = std::env::var(key).ok();
-            std::env::set_var(key, value);
+            let original = crate::environment::var(key).ok();
+            crate::environment::test::set_var(key, value);
             Self { key, original }
         }
     }
@@ -416,8 +430,8 @@ mod tests {
     impl Drop for EnvGuard {
         fn drop(&mut self) {
             match &self.original {
-                Some(val) => std::env::set_var(self.key, val),
-                None => std::env::remove_var(self.key),
+                Some(val) => crate::environment::test::set_var(self.key, val),
+                None => crate::environment::test::remove_var(self.key),
             }
         }
     }
@@ -462,6 +476,45 @@ mod tests {
         );
     }
 
+    #[tokio::test(flavor = "current_thread")]
+    async fn proxy_overlay_reaches_only_allowlisted_child_commands() {
+        let _environment_lock = crate::environment::test::lock();
+        let before: std::collections::HashMap<_, _> = std::env::vars_os().collect();
+        crate::environment::apply_proxy_overlay(&[(
+            "HTTP_PROXY".to_string(),
+            Some("http://127.0.0.1:7890".to_string()),
+        )]);
+
+        let approved = ShellTool::new(
+            test_security_with_env_passthrough(&["HTTP_PROXY"]),
+            test_runtime(),
+        );
+        let approved_result = approved
+            .execute(json!({"command": "env"}))
+            .await
+            .expect("allowlisted env command should run");
+        assert!(approved_result.success);
+        assert!(
+            approved_result
+                .output
+                .contains("HTTP_PROXY=http://127.0.0.1:7890")
+        );
+
+        let restricted = ShellTool::new(test_security_with_env_cmd(), test_runtime());
+        let restricted_result = restricted
+            .execute(json!({"command": "env"}))
+            .await
+            .expect("restricted env command should run");
+        assert!(restricted_result.success);
+        assert!(!restricted_result.output.contains("HTTP_PROXY="));
+
+        crate::environment::clear_proxy_overlay();
+        assert_eq!(
+            std::env::vars_os().collect::<std::collections::HashMap<_, _>>(),
+            before
+        );
+    }
+
     #[tokio::test]
     async fn shell_blocks_unknown_shell_variable_expansion() {
         let tool = ShellTool::new(test_security_with_env_cmd(), test_runtime());
@@ -470,11 +523,13 @@ mod tests {
             .await
             .expect("unknown $VAR expansion should be blocked");
         assert!(!result.success);
-        assert!(result
-            .error
-            .as_deref()
-            .unwrap_or("")
-            .contains("not allowed"));
+        assert!(
+            result
+                .error
+                .as_deref()
+                .unwrap_or("")
+                .contains("not allowed")
+        );
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -490,9 +545,11 @@ mod tests {
             .await
             .expect("env command execution should succeed");
         assert!(result.success);
-        assert!(result
-            .output
-            .contains("GLOAMY_TEST_PASSTHROUGH=db://unit-test"));
+        assert!(
+            result
+                .output
+                .contains("GLOAMY_TEST_PASSTHROUGH=db://unit-test")
+        );
     }
 
     #[test]
@@ -528,11 +585,13 @@ mod tests {
             .await
             .expect("unapproved command should return a result");
         assert!(!denied.success);
-        assert!(denied
-            .error
-            .as_deref()
-            .unwrap_or("")
-            .contains("explicit approval"));
+        assert!(
+            denied
+                .error
+                .as_deref()
+                .unwrap_or("")
+                .contains("explicit approval")
+        );
 
         let allowed = tool
             .execute(json!({

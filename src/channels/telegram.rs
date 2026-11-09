@@ -350,7 +350,7 @@ impl TelegramChannel {
             bot_token,
             allowed_users: Arc::new(RwLock::new(normalized_allowed)),
             pairing,
-            client: reqwest::Client::new(),
+            client: crate::config::build_runtime_proxy_client("channel.telegram"),
             stream_mode: StreamMode::Off,
             draft_update_interval_ms: 1000,
             last_draft_edit: Mutex::new(std::collections::HashMap::new()),
@@ -4228,7 +4228,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn e2e_live_voice_transcription_and_reply_cache() {
-        if std::env::var("GROQ_API_KEY").is_err() {
+        if crate::environment::var("GROQ_API_KEY").is_err() {
             eprintln!("GROQ_API_KEY not set — skipping live voice transcription test");
             return;
         }
@@ -4672,8 +4672,8 @@ mod tests {
     /// guard in `agent/loop_.rs` will reject photo messages.
     #[test]
     fn groq_provider_rejects_photo_with_vision_error() {
-        use crate::providers::compatible::{AuthStyle, OpenAiCompatibleProvider};
         use crate::providers::Provider;
+        use crate::providers::compatible::{AuthStyle, OpenAiCompatibleProvider};
 
         let groq = OpenAiCompatibleProvider::new(
             "Groq",

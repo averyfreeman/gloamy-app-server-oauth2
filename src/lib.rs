@@ -75,6 +75,7 @@ pub(crate) mod cost;
 pub(crate) mod cron;
 pub(crate) mod daemon;
 pub(crate) mod doctor;
+pub mod environment;
 pub mod gateway;
 pub mod grounding;
 pub(crate) mod health;

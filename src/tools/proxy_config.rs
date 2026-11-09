@@ -1,11 +1,11 @@
 use super::traits::{Tool, ToolResult};
 use crate::config::{
-    runtime_proxy_config, set_runtime_proxy_config, Config, ProxyConfig, ProxyScope,
+    Config, ProxyConfig, ProxyScope, runtime_proxy_config, set_runtime_proxy_config,
 };
 use crate::security::SecurityPolicy;
 use crate::util::MaybeSet;
 use async_trait::async_trait;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::fs;
 use std::sync::Arc;
 
@@ -118,12 +118,7 @@ impl ProxyConfigTool {
     }
 
     fn env_snapshot() -> Value {
-        json!({
-            "HTTP_PROXY": std::env::var("HTTP_PROXY").ok(),
-            "HTTPS_PROXY": std::env::var("HTTPS_PROXY").ok(),
-            "ALL_PROXY": std::env::var("ALL_PROXY").ok(),
-            "NO_PROXY": std::env::var("NO_PROXY").ok(),
-        })
+        json!(crate::environment::proxy_overlay_snapshot())
     }
 
     fn proxy_json(proxy: &ProxyConfig) -> Value {
@@ -146,7 +141,7 @@ impl ProxyConfigTool {
             output: serde_json::to_string_pretty(&json!({
                 "proxy": Self::proxy_json(&file_proxy),
                 "runtime_proxy": Self::proxy_json(&runtime_proxy),
-                "environment": Self::env_snapshot(),
+                "proxy_overlay": Self::env_snapshot(),
             }))?,
             error: None,
         })
@@ -170,7 +165,6 @@ impl ProxyConfigTool {
 
     async fn handle_set(&self, args: &Value) -> anyhow::Result<ToolResult> {
         let mut cfg = self.load_config_without_env()?;
-        let previous_scope = cfg.proxy.scope;
         let mut proxy = cfg.proxy.clone();
         let mut touched_proxy_url = false;
 
@@ -249,9 +243,9 @@ impl ProxyConfigTool {
         set_runtime_proxy_config(proxy.clone());
 
         if proxy.enabled && proxy.scope == ProxyScope::Environment {
-            proxy.apply_to_process_env();
-        } else if previous_scope == ProxyScope::Environment {
-            ProxyConfig::clear_process_env();
+            proxy.apply_to_environment_overlay();
+        } else {
+            ProxyConfig::clear_environment_overlay();
         }
 
         Ok(ToolResult {
@@ -259,7 +253,7 @@ impl ProxyConfigTool {
             output: serde_json::to_string_pretty(&json!({
                 "message": "Proxy configuration updated",
                 "proxy": Self::proxy_json(&proxy),
-                "environment": Self::env_snapshot(),
+                "proxy_overlay": Self::env_snapshot(),
             }))?,
             error: None,
         })
@@ -278,7 +272,7 @@ impl ProxyConfigTool {
             .and_then(Value::as_bool)
             .unwrap_or(clear_env_default);
         if clear_env {
-            ProxyConfig::clear_process_env();
+            ProxyConfig::clear_environment_overlay();
         }
 
         Ok(ToolResult {
@@ -286,7 +280,7 @@ impl ProxyConfigTool {
             output: serde_json::to_string_pretty(&json!({
                 "message": "Proxy disabled",
                 "proxy": Self::proxy_json(&cfg.proxy),
-                "environment": Self::env_snapshot(),
+                "proxy_overlay": Self::env_snapshot(),
             }))?,
             error: None,
         })
@@ -308,27 +302,28 @@ impl ProxyConfigTool {
             );
         }
 
-        proxy.apply_to_process_env();
+        proxy.apply_to_environment_overlay();
         set_runtime_proxy_config(proxy.clone());
 
         Ok(ToolResult {
             success: true,
             output: serde_json::to_string_pretty(&json!({
-                "message": "Proxy environment variables applied",
+                "message": "Gloamy proxy overlay applied to Gloamy HTTP clients and allowlisted child commands",
                 "proxy": Self::proxy_json(&proxy),
-                "environment": Self::env_snapshot(),
+                "proxy_overlay": Self::env_snapshot(),
             }))?,
             error: None,
         })
     }
 
     fn handle_clear_env(&self) -> anyhow::Result<ToolResult> {
-        ProxyConfig::clear_process_env();
+        ProxyConfig::clear_environment_overlay();
+        set_runtime_proxy_config(ProxyConfig::default());
         Ok(ToolResult {
             success: true,
             output: serde_json::to_string_pretty(&json!({
-                "message": "Proxy environment variables cleared",
-                "environment": Self::env_snapshot(),
+                "message": "Gloamy proxy overlay cleared; inherited process environment is unchanged",
+                "proxy_overlay": Self::env_snapshot(),
             }))?,
             error: None,
         })
@@ -342,7 +337,7 @@ impl Tool for ProxyConfigTool {
     }
 
     fn description(&self) -> &str {
-        "Manage Gloamy proxy settings (scope: environment | gloamy | services), including runtime and process env application"
+        "Manage Gloamy proxy settings (scope: environment | gloamy | services). Environment scope uses a Gloamy-managed overlay for Gloamy HTTP clients and allowlisted child commands; it never changes the parent process environment."
     }
 
     fn parameters_schema(&self) -> Value {
@@ -441,6 +436,10 @@ mod tests {
     use crate::security::{AutonomyLevel, SecurityPolicy};
     use tempfile::TempDir;
 
+    fn process_environment() -> std::collections::HashMap<std::ffi::OsString, std::ffi::OsString> {
+        std::env::vars_os().collect()
+    }
+
     fn test_security() -> Arc<SecurityPolicy> {
         Arc::new(SecurityPolicy {
             autonomy: AutonomyLevel::Supervised,
@@ -461,6 +460,7 @@ mod tests {
 
     #[tokio::test]
     async fn list_services_action_returns_known_keys() {
+        let _environment_lock = crate::environment::test::lock();
         let tmp = TempDir::new().unwrap();
         let tool = ProxyConfigTool::new(test_config(&tmp).await, test_security());
 
@@ -475,6 +475,7 @@ mod tests {
 
     #[tokio::test]
     async fn set_scope_services_requires_services_entries() {
+        let _environment_lock = crate::environment::test::lock();
         let tmp = TempDir::new().unwrap();
         let tool = ProxyConfigTool::new(test_config(&tmp).await, test_security());
 
@@ -490,14 +491,17 @@ mod tests {
             .unwrap();
 
         assert!(!result.success);
-        assert!(result
-            .error
-            .unwrap_or_default()
-            .contains("proxy.scope='services'"));
+        assert!(
+            result
+                .error
+                .unwrap_or_default()
+                .contains("proxy.scope='services'")
+        );
     }
 
     #[tokio::test]
     async fn set_and_get_round_trip_proxy_scope() {
+        let _environment_lock = crate::environment::test::lock();
         let tmp = TempDir::new().unwrap();
         let tool = ProxyConfigTool::new(test_config(&tmp).await, test_security());
 
@@ -520,6 +524,7 @@ mod tests {
 
     #[tokio::test]
     async fn set_null_proxy_url_clears_existing_value() {
+        let _environment_lock = crate::environment::test::lock();
         let tmp = TempDir::new().unwrap();
         let tool = ProxyConfigTool::new(test_config(&tmp).await, test_security());
 
@@ -546,5 +551,41 @@ mod tests {
         let parsed: Value = serde_json::from_str(&get_result.output).unwrap();
         assert!(parsed["proxy"]["http_proxy"].is_null());
         assert!(parsed["runtime_proxy"]["http_proxy"].is_null());
+    }
+
+    #[tokio::test]
+    async fn apply_and_clear_env_use_overlay_without_mutating_process_environment() {
+        let _environment_lock = crate::environment::test::lock();
+        let tmp = TempDir::new().unwrap();
+        let tool = ProxyConfigTool::new(test_config(&tmp).await, test_security());
+        let before = process_environment();
+
+        let set_result = tool
+            .execute(json!({
+                "action": "set",
+                "enabled": true,
+                "scope": "environment",
+                "http_proxy": "http://127.0.0.1:7890",
+                "https_proxy": "http://127.0.0.1:7891",
+                "no_proxy": "localhost,127.0.0.1"
+            }))
+            .await
+            .unwrap();
+        assert!(set_result.success, "{:?}", set_result.error);
+        assert_eq!(process_environment(), before);
+        assert_eq!(
+            crate::environment::var("HTTP_PROXY").unwrap(),
+            "http://127.0.0.1:7890"
+        );
+
+        let apply_result = tool.execute(json!({"action": "apply_env"})).await.unwrap();
+        assert!(apply_result.success, "{:?}", apply_result.error);
+        assert_eq!(process_environment(), before);
+
+        let clear_result = tool.execute(json!({"action": "clear_env"})).await.unwrap();
+        assert!(clear_result.success, "{:?}", clear_result.error);
+        assert_eq!(process_environment(), before);
+        assert!(crate::environment::proxy_overlay_snapshot().is_empty());
+        assert!(!runtime_proxy_config().enabled);
     }
 }

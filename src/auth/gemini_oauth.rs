@@ -20,12 +20,12 @@ use tokio::net::TcpListener;
 
 // Re-export for external use (used by main.rs)
 #[allow(unused_imports)]
-pub use crate::auth::oauth_common::{generate_pkce_state, PkceState};
+pub use crate::auth::oauth_common::{PkceState, generate_pkce_state};
 
 /// Get Gemini OAuth client ID from environment.
 /// Required: set GEMINI_OAUTH_CLIENT_ID environment variable.
 pub fn gemini_oauth_client_id() -> Option<String> {
-    std::env::var("GEMINI_OAUTH_CLIENT_ID")
+    crate::environment::var("GEMINI_OAUTH_CLIENT_ID")
         .ok()
         .filter(|s| !s.is_empty())
 }
@@ -33,7 +33,7 @@ pub fn gemini_oauth_client_id() -> Option<String> {
 /// Get Gemini OAuth client secret from environment.
 /// Required: set GEMINI_OAUTH_CLIENT_SECRET environment variable.
 pub fn gemini_oauth_client_secret() -> Option<String> {
-    std::env::var("GEMINI_OAUTH_CLIENT_SECRET")
+    crate::environment::var("GEMINI_OAUTH_CLIENT_SECRET")
         .ok()
         .filter(|s| !s.is_empty())
 }
@@ -531,8 +531,8 @@ mod tests {
 
     impl EnvVarRestore {
         fn set(key: &'static str, value: &str) -> Self {
-            let original = std::env::var(key).ok();
-            std::env::set_var(key, value);
+            let original = crate::environment::var(key).ok();
+            crate::environment::test::set_var(key, value);
             Self { key, original }
         }
     }
@@ -540,9 +540,9 @@ mod tests {
     impl Drop for EnvVarRestore {
         fn drop(&mut self) {
             if let Some(ref original) = self.original {
-                std::env::set_var(self.key, original);
+                crate::environment::test::set_var(self.key, original);
             } else {
-                std::env::remove_var(self.key);
+                crate::environment::test::remove_var(self.key);
             }
         }
     }

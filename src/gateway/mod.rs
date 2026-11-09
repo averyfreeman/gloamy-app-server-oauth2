@@ -21,19 +21,19 @@ use crate::cost::CostTracker;
 use crate::memory::{self, Memory, MemoryCategory};
 use crate::providers::{self, ChatMessage, ChatRequest, Provider};
 use crate::runtime;
-use crate::security::pairing::{constant_time_eq, is_public_bind, PairingGuard};
 use crate::security::SecurityPolicy;
+use crate::security::pairing::{PairingGuard, constant_time_eq, is_public_bind};
 use crate::tools;
 use crate::tools::traits::ToolSpec;
 use crate::util::truncate_with_ellipsis;
 use anyhow::{Context, Result};
 use axum::{
+    Router,
     body::Bytes,
     extract::{ConnectInfo, Query, State},
-    http::{header, HeaderMap, StatusCode},
+    http::{HeaderMap, StatusCode, header},
     response::{IntoResponse, Json},
     routing::{delete, get, post, put},
-    Router,
 };
 use parking_lot::Mutex;
 use std::collections::HashMap;
@@ -438,22 +438,23 @@ pub async fn run_gateway(host: &str, port: u16, config: Config) -> Result<()> {
 
     // WhatsApp app secret for webhook signature verification
     // Priority: environment variable > config file
-    let whatsapp_app_secret: Option<Arc<str>> = std::env::var("GLOAMY_WHATSAPP_APP_SECRET")
-        .ok()
-        .and_then(|secret| {
-            let secret = secret.trim();
-            (!secret.is_empty()).then(|| secret.to_owned())
-        })
-        .or_else(|| {
-            config.channels_config.whatsapp.as_ref().and_then(|wa| {
-                wa.app_secret
-                    .as_deref()
-                    .map(str::trim)
-                    .filter(|secret| !secret.is_empty())
-                    .map(ToOwned::to_owned)
+    let whatsapp_app_secret: Option<Arc<str>> =
+        crate::environment::var("GLOAMY_WHATSAPP_APP_SECRET")
+            .ok()
+            .and_then(|secret| {
+                let secret = secret.trim();
+                (!secret.is_empty()).then(|| secret.to_owned())
             })
-        })
-        .map(Arc::from);
+            .or_else(|| {
+                config.channels_config.whatsapp.as_ref().and_then(|wa| {
+                    wa.app_secret
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|secret| !secret.is_empty())
+                        .map(ToOwned::to_owned)
+                })
+            })
+            .map(Arc::from);
 
     // Linq channel (if configured)
     let linq_channel: Option<Arc<LinqChannel>> = config.channels_config.linq.as_ref().map(|lq| {
@@ -466,22 +467,23 @@ pub async fn run_gateway(host: &str, port: u16, config: Config) -> Result<()> {
 
     // Linq signing secret for webhook signature verification
     // Priority: environment variable > config file
-    let linq_signing_secret: Option<Arc<str>> = std::env::var("GLOAMY_LINQ_SIGNING_SECRET")
-        .ok()
-        .and_then(|secret| {
-            let secret = secret.trim();
-            (!secret.is_empty()).then(|| secret.to_owned())
-        })
-        .or_else(|| {
-            config.channels_config.linq.as_ref().and_then(|lq| {
-                lq.signing_secret
-                    .as_deref()
-                    .map(str::trim)
-                    .filter(|secret| !secret.is_empty())
-                    .map(ToOwned::to_owned)
+    let linq_signing_secret: Option<Arc<str>> =
+        crate::environment::var("GLOAMY_LINQ_SIGNING_SECRET")
+            .ok()
+            .and_then(|secret| {
+                let secret = secret.trim();
+                (!secret.is_empty()).then(|| secret.to_owned())
             })
-        })
-        .map(Arc::from);
+            .or_else(|| {
+                config.channels_config.linq.as_ref().and_then(|lq| {
+                    lq.signing_secret
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|secret| !secret.is_empty())
+                        .map(ToOwned::to_owned)
+                })
+            })
+            .map(Arc::from);
 
     // WATI channel (if configured)
     let wati_channel: Option<Arc<WatiChannel>> =
@@ -507,7 +509,7 @@ pub async fn run_gateway(host: &str, port: u16, config: Config) -> Result<()> {
     // Nextcloud Talk webhook secret for signature verification
     // Priority: environment variable > config file
     let nextcloud_talk_webhook_secret: Option<Arc<str>> =
-        std::env::var("GLOAMY_NEXTCLOUD_TALK_WEBHOOK_SECRET")
+        crate::environment::var("GLOAMY_NEXTCLOUD_TALK_WEBHOOK_SECRET")
             .ok()
             .and_then(|secret| {
                 let secret = secret.trim();
@@ -765,7 +767,9 @@ async fn handle_metrics(State(state): State<AppState>) -> impl IntoResponse {
     {
         prom.encode()
     } else {
-        String::from("# Prometheus backend not enabled. Set [observability] backend = \"prometheus\" in config.\n")
+        String::from(
+            "# Prometheus backend not enabled. Set [observability] backend = \"prometheus\" in config.\n",
+        )
     };
 
     (

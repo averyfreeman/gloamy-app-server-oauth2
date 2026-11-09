@@ -5,7 +5,7 @@
 //! payloads, which may contain authorization URLs or user content.
 
 use anyhow::{Context, Result};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -192,7 +192,9 @@ impl CodexAppServerClient {
     async fn require_chatgpt_oauth(&mut self) -> Result<()> {
         let status = self.account_status().await?;
         if !status.is_chatgpt_oauth() {
-            anyhow::bail!("No ChatGPT OAuth account is signed in; run `gloamy auth login --provider codex-app-server`");
+            anyhow::bail!(
+                "No ChatGPT OAuth account is signed in; run `gloamy auth login --provider codex-app-server`"
+            );
         }
         Ok(())
     }
@@ -382,7 +384,7 @@ fn apply_sanitized_environment(command: &mut Command) {
         "WINDIR",
     ];
 
-    let environment: Vec<_> = std::env::vars_os()
+    let environment: Vec<_> = crate::environment::vars_os()
         .filter(|(name, _)| {
             let name = name.to_string_lossy();
             ALLOWED_ENVIRONMENT

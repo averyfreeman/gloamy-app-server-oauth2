@@ -269,7 +269,7 @@ impl Tool for ContentSearchTool {
         // Security: clear environment, keep only safe variables
         cmd.env_clear();
         for key in &["PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE"] {
-            if let Ok(val) = std::env::var(key) {
+            if let Ok(val) = crate::environment::var(key) {
                 cmd.env(key, val);
             }
         }
@@ -702,10 +702,12 @@ mod tests {
         assert!(schema["properties"]["pattern"].is_object());
         assert!(schema["properties"]["path"].is_object());
         assert!(schema["properties"]["output_mode"].is_object());
-        assert!(schema["required"]
-            .as_array()
-            .unwrap()
-            .contains(&json!("pattern")));
+        assert!(
+            schema["required"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("pattern"))
+        );
     }
 
     #[tokio::test]
@@ -852,11 +854,13 @@ mod tests {
             .unwrap();
 
         assert!(!result.success);
-        assert!(result
-            .error
-            .as_ref()
-            .unwrap()
-            .contains("Invalid output_mode"));
+        assert!(
+            result
+                .error
+                .as_ref()
+                .unwrap()
+                .contains("Invalid output_mode")
+        );
     }
 
     #[tokio::test]

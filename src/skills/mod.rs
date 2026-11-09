@@ -25,8 +25,7 @@ struct BundledSkillAsset {
 const BUNDLED_SKILL_ASSETS: &[BundledSkillAsset] = &[
     BundledSkillAsset {
         name: "docx",
-        description:
-            "Create, review, and update Word-compatible .docx files without breaking templates. File workflows only, not Word.app GUI automation.",
+        description: "Create, review, and update Word-compatible .docx files without breaking templates. File workflows only, not Word.app GUI automation.",
         contents: include_str!("assets/docx/SKILL.md"),
     },
     BundledSkillAsset {
@@ -469,7 +468,7 @@ fn open_skills_enabled_from_sources(
 }
 
 fn open_skills_enabled(config_open_skills_enabled: Option<bool>) -> bool {
-    let env_override = std::env::var("GLOAMY_OPEN_SKILLS_ENABLED").ok();
+    let env_override = crate::environment::var("GLOAMY_OPEN_SKILLS_ENABLED").ok();
     open_skills_enabled_from_sources(config_open_skills_enabled, env_override.as_deref())
 }
 
@@ -497,7 +496,7 @@ fn resolve_open_skills_dir_from_sources(
 }
 
 fn resolve_open_skills_dir(config_open_skills_dir: Option<&str>) -> Option<PathBuf> {
-    let env_dir = std::env::var("GLOAMY_OPEN_SKILLS_DIR").ok();
+    let env_dir = crate::environment::var("GLOAMY_OPEN_SKILLS_DIR").ok();
     let home_dir = UserDirs::new().map(|dirs| dirs.home_dir().to_path_buf());
     resolve_open_skills_dir_from_sources(
         env_dir.as_deref(),
@@ -1128,7 +1127,9 @@ pub fn handle_command(command: crate::SkillCommands, config: &crate::config::Con
                 println!("No skills installed.");
                 println!();
                 println!("  Create one: mkdir -p ~/.gloamy/workspace/skills/my-skill");
-                println!("              echo '# My Skill' > ~/.gloamy/workspace/skills/my-skill/SKILL.md");
+                println!(
+                    "              echo '# My Skill' > ~/.gloamy/workspace/skills/my-skill/SKILL.md"
+                );
                 println!();
                 println!("  Or install: gloamy skills install <source>");
             } else {
@@ -1294,8 +1295,8 @@ mod tests {
 
     impl EnvVarGuard {
         fn unset(key: &'static str) -> Self {
-            let original = std::env::var(key).ok();
-            std::env::remove_var(key);
+            let original = crate::environment::var(key).ok();
+            crate::environment::test::remove_var(key);
             Self { key, original }
         }
     }
@@ -1303,9 +1304,9 @@ mod tests {
     impl Drop for EnvVarGuard {
         fn drop(&mut self) {
             if let Some(value) = &self.original {
-                std::env::set_var(self.key, value);
+                crate::environment::test::set_var(self.key, value);
             } else {
-                std::env::remove_var(self.key);
+                crate::environment::test::remove_var(self.key);
             }
         }
     }
