@@ -7,6 +7,11 @@ on:
         description: "Stable version to release (e.g. 0.2.0)"
         required: true
         type: string
+      docker_only:
+        description: "Retry Docker publication for an existing stable release"
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: promote-release
@@ -35,6 +40,7 @@ jobs:
         run: |
           set -euo pipefail
           input_version="${{ inputs.version }}"
+          docker_only="${{ inputs.docker_only }}"
           cargo_version=$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -1)
 
           if [[ ! "$input_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -48,15 +54,34 @@ jobs:
           fi
 
           tag="v${input_version}"
+          tag_exists=false
           if git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
+            tag_exists=true
+          fi
+
+          if [[ "${docker_only}" == "true" ]]; then
+            if [[ "${tag_exists}" != "true" ]]; then
+              echo "::error::Docker-only retry requires an existing stable tag (${tag})."
+              exit 1
+            fi
+
+            is_prerelease=$(gh release view "${tag}" --json isPrerelease --jq '.isPrerelease')
+            if [[ "${is_prerelease}" != "false" ]]; then
+              echo "::error::Docker-only retry requires a published stable release (${tag})."
+              exit 1
+            fi
+          elif [[ "${tag_exists}" == "true" ]]; then
             echo "::error::Tag ${tag} already exists."
             exit 1
           fi
 
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ github.token }}
 
   build:
     name: Build ${{ matrix.target }}
+    if: ${{ !inputs.docker_only }}
     needs: [validate]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
@@ -114,6 +139,7 @@ jobs:
 
   publish:
     name: Publish Stable Release
+    if: ${{ !inputs.docker_only }}
     needs: [validate, build]
     runs-on: ubuntu-latest
     steps:
@@ -144,10 +170,13 @@ jobs:
   docker:
     name: Push Docker Image
     needs: [validate, build]
+    if: ${{ always() && needs.validate.result == 'success' && (inputs.docker_only || needs.build.result == 'success') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.tag }}
 
       - uses: docker/setup-buildx-action@v3
 

@@ -33,6 +33,7 @@ Release automation currently lives in:
   - input must be semver `X.Y.Z`
   - `Cargo.toml` version must exactly match input version
   - stable tag `vX.Y.Z` must not already exist on origin
+  - `docker_only: true` is allowed only for an existing stable tag and release
 - Output:
   - stable GitHub release (`vX.Y.Z`) with build artifacts and `SHA256SUMS`
   - Docker images tagged with `vX.Y.Z` and `latest`
@@ -55,7 +56,7 @@ Release automation currently lives in:
 
 1. Ensure `Cargo.toml` has the intended stable version.
 2. Run `Promote Release` workflow manually with `version=<Cargo.toml version>`.
-3. Monitor `validate`, `build`, `publish`, and `docker` jobs.
+3. Monitor `validate`, `build`, `publish`, and `docker` jobs. The Docker build has a 90-minute limit because it compiles both Linux architectures.
 
 ### 4) Post-release validation
 
@@ -70,7 +71,7 @@ If stable promotion fails:
 
 1. Fix the issue on `main`.
 2. Re-run `Promote Release` with the same target version if no tag was created.
-3. If tag was already created but publish steps failed, resolve the workflow issue and re-run the failed job path.
+3. If the stable GitHub Release was published but Docker publication failed, dispatch `Promote Release` with the same version and `docker_only: true`. This validates the existing stable release and retries only the Docker image job.
 
 ## Operational Notes
 

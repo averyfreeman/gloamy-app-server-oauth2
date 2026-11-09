@@ -28,6 +28,7 @@ For event-by-event delivery behavior across PR and merge paths, see [`.github/wo
 - `.github/workflows/promote-release.yml` (`Promote Release`)
   - Trigger: manual (`workflow_dispatch`) with explicit semver input
   - Purpose: validate release version, publish stable GitHub release, and push `latest` Docker image
+  - Recovery: set `docker_only: true` to retry Docker publication for an existing stable release
 
 - `.github/dependabot.yml` (Dependabot)
   - Trigger: scheduled runs managed by GitHub
