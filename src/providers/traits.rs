@@ -1,6 +1,6 @@
 use crate::tools::ToolSpec;
 use async_trait::async_trait;
-use futures_util::{stream, StreamExt};
+use futures_util::{StreamExt, stream};
 use serde::{Deserialize, Serialize};
 use std::fmt::Write;
 
@@ -66,7 +66,7 @@ pub struct ChatResponse {
     /// Token usage reported by the provider, if available.
     pub usage: Option<TokenUsage>,
     /// Raw reasoning/thinking content from thinking models (e.g. DeepSeek-R1,
-    /// Kimi K2.5, GLM-4.7). Preserved as an opaque pass-through so it can be
+    /// reasoning-capable providers). Preserved as an opaque pass-through so it can be
     /// sent back in subsequent API requests — some providers reject tool-call
     /// history that omits this field.
     pub reasoning_content: Option<String>,

@@ -517,11 +517,7 @@ impl Provider for OpenRouterProvider {
                     })
                 })
                 .collect();
-            if specs.is_empty() {
-                None
-            } else {
-                Some(specs)
-            }
+            if specs.is_empty() { None } else { Some(specs) }
         };
 
         // Convert ChatMessage to NativeMessage, preserving structured assistant/tool entries
@@ -606,7 +602,7 @@ mod tests {
     async fn chat_with_system_fails_without_key() {
         let provider = OpenRouterProvider::new(None);
         let result = provider
-            .chat_with_system(Some("system"), "hello", "openai/gpt-4o", 0.2)
+            .chat_with_system(Some("system"), "hello", "openai/synthetic-model-035", 0.2)
             .await;
 
         assert!(result.is_err());
@@ -628,7 +624,7 @@ mod tests {
         ];
 
         let result = provider
-            .chat_with_history(&messages, "anthropic/claude-sonnet-4", 0.7)
+            .chat_with_history(&messages, "anthropic/synthetic-model-013", 0.7)
             .await;
 
         assert!(result.is_err());
@@ -638,7 +634,7 @@ mod tests {
     #[test]
     fn chat_request_serializes_with_system_and_user() {
         let request = ChatRequest {
-            model: "anthropic/claude-sonnet-4".into(),
+            model: "anthropic/synthetic-model-013".into(),
             messages: vec![
                 Message {
                     role: "system".into(),
@@ -654,7 +650,7 @@ mod tests {
 
         let json = serde_json::to_string(&request).unwrap();
 
-        assert!(json.contains("anthropic/claude-sonnet-4"));
+        assert!(json.contains("anthropic/synthetic-model-013"));
         assert!(json.contains("\"role\":\"system\""));
         assert!(json.contains("\"role\":\"user\""));
         assert!(json.contains("\"temperature\":0.5"));
@@ -674,7 +670,7 @@ mod tests {
         ];
 
         let request = ChatRequest {
-            model: "google/gemini-2.5-pro".into(),
+            model: "google/synthetic-model-023".into(),
             messages: messages
                 .iter()
                 .map(|msg| Message {
@@ -688,7 +684,7 @@ mod tests {
         let json = serde_json::to_string(&request).unwrap();
         assert!(json.contains("\"role\":\"assistant\""));
         assert!(json.contains("\"role\":\"user\""));
-        assert!(json.contains("google/gemini-2.5-pro"));
+        assert!(json.contains("google/synthetic-model-023"));
     }
 
     #[test]
@@ -727,7 +723,7 @@ mod tests {
         })];
 
         let result = provider
-            .chat_with_tools(&messages, &tools, "deepseek/deepseek-chat", 0.5)
+            .chat_with_tools(&messages, &tools, "deepseek/synthetic-model-018", 0.5)
             .await;
 
         assert!(result.is_err());

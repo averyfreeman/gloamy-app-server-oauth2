@@ -255,6 +255,7 @@ fn tool_response(calls: Vec<ToolCall>) -> ChatResponse {
 
 fn build_agent(provider: Box<dyn Provider>, tools: Vec<Box<dyn Tool>>) -> Agent {
     Agent::builder()
+        .model_name("synthetic-model".into())
         .provider(provider)
         .tools(tools)
         .memory(make_memory())
@@ -267,6 +268,7 @@ fn build_agent(provider: Box<dyn Provider>, tools: Vec<Box<dyn Tool>>) -> Agent 
 
 fn build_agent_xml(provider: Box<dyn Provider>, tools: Vec<Box<dyn Tool>>) -> Agent {
     Agent::builder()
+        .model_name("synthetic-model".into())
         .provider(provider)
         .tools(tools)
         .memory(make_memory())
@@ -283,6 +285,7 @@ fn build_recording_agent(
     memory_loader: Option<Box<dyn MemoryLoader>>,
 ) -> Agent {
     let mut builder = Agent::builder()
+        .model_name("synthetic-model".into())
         .provider(provider)
         .tools(tools)
         .memory(make_memory())
@@ -675,7 +678,7 @@ async fn e2e_live_openai_codex_multi_turn() {
     use gloamy::providers::traits::Provider;
 
     let provider = OpenAiCodexProvider::new(&ProviderRuntimeOptions::default(), None).unwrap();
-    let model = "gpt-5.3-codex";
+    let model = "synthetic-model-039";
 
     // Turn 1: establish a fact
     let messages_turn1 = vec![

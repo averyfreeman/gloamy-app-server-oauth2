@@ -1552,6 +1552,17 @@ pub struct ProviderInfo {
     pub local: bool,
 }
 
+/// Resolve a documented provider alias to its factory key for shared lookups.
+/// Unknown and custom provider identifiers are preserved exactly.
+pub fn canonical_provider_name(name: &str) -> &str {
+    static PROVIDERS: std::sync::OnceLock<Vec<ProviderInfo>> = std::sync::OnceLock::new();
+    PROVIDERS
+        .get_or_init(list_providers)
+        .iter()
+        .find(|provider| provider.name == name || provider.aliases.contains(&name))
+        .map_or(name, |provider| provider.name)
+}
+
 /// Return the list of all known providers for display in `gloamy providers list`.
 ///
 /// This is intentionally separate from the factory match in `create_provider`

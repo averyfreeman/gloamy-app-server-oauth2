@@ -4,7 +4,7 @@ Gói Python đồng hành cho [Gloamy](https://github.com/iBz-04/gloamy) — g�
 
 ## Tại sao cần gói này?
 
-Một số nhà cung cấp LLM (đặc biệt là GLM-5/Zhipu và các model tương tự) có hành vi gọi công cụ không nhất quán khi dùng lời gọi dạng văn bản. Gói này cung cấp phương pháp dựa trên LangGraph mang lại:
+Một số nhà cung cấp LLM (đặc biệt là Zhipu và các model tương tự) có hành vi gọi công cụ không nhất quán khi dùng lời gọi dạng văn bản. Gói này cung cấp phương pháp dựa trên LangGraph mang lại:
 
 - **Gọi công cụ nhất quán** trên mọi provider tương thích OpenAI
 - **Vòng lặp công cụ tự động** — tiếp tục gọi cho đến khi hoàn tất tác vụ
@@ -36,7 +36,7 @@ async def main():
     # Tạo agent với công cụ
     agent = create_agent(
         tools=[shell, file_read, file_write],
-        model="glm-5",
+        model="synthetic-model-030",
         api_key="your-api-key",
         base_url="https://api.z.ai/api/coding/paas/v4"
     )
@@ -111,7 +111,7 @@ agent = create_agent(tools=[my_custom_tool])
 
 Hoạt động với mọi provider tương thích OpenAI:
 
-- **Z.AI / GLM-5** — `https://api.z.ai/api/coding/paas/v4`
+- **Z.AI / Zhipu** — `https://api.z.ai/api/coding/paas/v4`
 - **OpenRouter** — `https://openrouter.ai/api/v1`
 - **Groq** — `https://api.groq.com/openai/v1`
 - **DeepSeek** — `https://api.deepseek.com`
@@ -152,3 +152,5 @@ Dùng **Rust Gloamy** cho triển khai biên (edge) trong sản phẩm. Dùng **
 ## Giấy phép
 
 MIT License — xem [LICENSE](../LICENSE)
+
+Các ID mô hình trong ví dụ chỉ là giá trị minh họa. Truyền ID mô hình của nhà cung cấp hoặc đặt `GLOAMY_MODEL`; trình bao Python không tự chọn mô hình mặc định.

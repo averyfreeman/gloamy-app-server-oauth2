@@ -29,12 +29,15 @@ class GloamyAgent:
     def __init__(
         self,
         tools: list[BaseTool],
-        model: str = "glm-5",
+        model: Optional[str] = None,
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
         temperature: float = 0.7,
         system_prompt: Optional[str] = None,
     ):
+        model = model or os.environ.get("GLOAMY_MODEL")
+        if not model or not model.strip():
+            raise ValueError("Choose an explicit model ID or set GLOAMY_MODEL; use provider discovery for available IDs.")
         self.tools = tools
         self.model = model
         self.temperature = temperature
@@ -122,7 +125,7 @@ class GloamyAgent:
 
 def create_agent(
     tools: Optional[list[BaseTool]] = None,
-    model: str = "glm-5",
+    model: Optional[str] = None,
     api_key: Optional[str] = None,
     base_url: Optional[str] = None,
     temperature: float = 0.7,
@@ -149,7 +152,7 @@ def create_agent(
 
         agent = create_agent(
             tools=[shell, file_read],
-            model="glm-5",
+            model="synthetic-model-030",
             api_key="your-key"
         )
 

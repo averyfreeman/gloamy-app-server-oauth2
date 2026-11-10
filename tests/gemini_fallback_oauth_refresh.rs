@@ -191,7 +191,7 @@ async fn gemini_warmup_refreshes_expired_oauth_token() -> Result<()> {
         .chat_with_system(
             Some("You are a concise assistant. Reply in one short sentence."),
             "Say 'OAuth refresh works'",
-            "gemini-2.5-pro",
+            "synthetic-model-023",
             0.7,
         )
         .await;

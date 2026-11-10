@@ -213,10 +213,10 @@ Reference: [`docs/docker-deployment.md`](docs/docker-deployment.md)
 
 ### Non-Interactive Setup
 
-If you already know exactly what you want, you can skip the full wizard:
+If you already know exactly what you want, you can skip the full wizard. Replace `synthetic-model-037` with an ID from provider discovery or your verified catalog:
 
 ```bash
-cargo run -- onboard --api-key YOUR_OPENAI_KEY --provider openai --model gpt-5-mini
+cargo run -- onboard --api-key YOUR_OPENAI_KEY --provider openai --model synthetic-model-037
 ```
 
 This path is faster, but the interactive onboarding flow is the better default for first setup.
@@ -296,7 +296,7 @@ cargo run -- agent -m "Summarize today's logs"
 Override provider and model for one run:
 
 ```bash
-cargo run -- agent --provider openai --model gpt-5-mini -m "hello"
+cargo run -- agent --provider openai --model synthetic-model-037 -m "hello"
 ```
 
 ### Daemon
@@ -366,7 +366,7 @@ Common variants:
 gloamy onboard --interactive
 gloamy onboard --channels-only
 gloamy onboard --force
-gloamy onboard --api-key YOUR_KEY --provider openai --model gpt-5-mini
+gloamy onboard --api-key YOUR_KEY --provider openai --model synthetic-model-037
 ```
 
 If you already have a config and only want to wire channels, use:
@@ -413,7 +413,7 @@ Minimal example:
 ```toml
 api_key = "sk-..."
 default_provider = "openai"
-default_model = "gpt-5-mini"
+default_model = "synthetic-model-037"
 default_temperature = 0.7
 
 [memory]
@@ -445,9 +445,9 @@ Gloamy supports:
 Examples:
 
 ```bash
-gloamy agent --provider openai --model gpt-5-mini -m "hello"
+gloamy agent --provider openai --model synthetic-model-037 -m "hello"
 gloamy agent --provider anthropic -m "hello"
-gloamy agent --provider openai-codex -m "hello"
+gloamy agent --provider openai-codex --model YOUR_DISCOVERED_MODEL_ID -m "hello"
 ```
 
 References:

@@ -2,7 +2,7 @@
 
 This runbook is for operators who maintain availability, security posture, and incident response.
 
-Last verified: **March 28, 2026**.
+Last verified: **November 9, 2026**.
 
 ## Scope
 
@@ -73,6 +73,14 @@ gloamy service status
 ```bash
 journalctl --user -u gloamy.service -f
 ```
+
+## Model Catalog Updates
+
+The local `model-catalog.toml` is a complete replacement for the bundled catalog. Keep a copy of the last known-good file before editing it. Catalog lookup is offline; provider discovery uses the separate `gloamy models refresh` command and cache.
+
+For a running gateway, send `POST /api/models/catalog/reload` with a valid stored paired bearer token. A `200` response publishes the validated catalog for later lookups. A `400` response means parsing or validation failed; the gateway keeps the last valid snapshot. Run `gloamy models list` locally to see the loading error, repair the file, and retry. Daemon logs record rejection without file contents. Restarting with an invalid existing file also fails explicitly, so restore a valid file before restarting.
+
+The cutoff for curated menus, recommendations, and built-in prices advances with the date. Existing configured model IDs stay selected after they age out. Before changing the bundled catalog, verify exact IDs, release dates, aliases, rate conditions, and direct sources; omit a price when one flat input/output pair would be misleading. See [catalog schema and sources](config-reference.md#curated-model-catalog).
 
 ## Incident Triage Flow (Fast Path)
 

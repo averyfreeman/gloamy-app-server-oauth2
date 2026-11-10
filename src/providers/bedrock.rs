@@ -1179,7 +1179,7 @@ mod tests {
         let auth = build_authorization_header(
             &credentials,
             "POST",
-            "/model/anthropic.claude-3-sonnet/converse",
+            "/model/anthropic.synthetic-model-005/converse",
             "",
             &headers,
             b"{}",
@@ -1257,7 +1257,7 @@ mod tests {
     async fn chat_fails_without_credentials() {
         let provider = BedrockProvider { credentials: None };
         let result = provider
-            .chat_with_system(None, "hello", "anthropic.claude-sonnet-4-6", 0.7)
+            .chat_with_system(None, "hello", "anthropic.synthetic-model-016", 0.7)
             .await;
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
@@ -1274,35 +1274,31 @@ mod tests {
 
     #[test]
     fn endpoint_url_formats_correctly() {
-        let url = BedrockProvider::endpoint_url("us-east-1", "anthropic.claude-sonnet-4-6");
+        let url = BedrockProvider::endpoint_url("us-east-1", "anthropic.synthetic-model-016");
         assert_eq!(
             url,
-            "https://bedrock-runtime.us-east-1.amazonaws.com/model/anthropic.claude-sonnet-4-6/converse"
+            "https://bedrock-runtime.us-east-1.amazonaws.com/model/anthropic.synthetic-model-016/converse"
         );
     }
 
     #[test]
     fn endpoint_url_keeps_raw_colon() {
         // Endpoint URL uses raw colon so reqwest sends `:` on the wire.
-        let url =
-            BedrockProvider::endpoint_url("us-west-2", "anthropic.claude-3-5-haiku-20241022-v1:0");
-        assert!(url.contains("/model/anthropic.claude-3-5-haiku-20241022-v1:0/converse"));
+        let url = BedrockProvider::endpoint_url("us-west-2", "anthropic.synthetic-model-002:0");
+        assert!(url.contains("/model/anthropic.synthetic-model-002:0/converse"));
     }
 
     #[test]
     fn canonical_uri_encodes_colon() {
         // Canonical URI must encode `:` as `%3A` for SigV4 signing.
-        let uri = BedrockProvider::canonical_uri("anthropic.claude-3-5-haiku-20241022-v1:0");
-        assert_eq!(
-            uri,
-            "/model/anthropic.claude-3-5-haiku-20241022-v1%3A0/converse"
-        );
+        let uri = BedrockProvider::canonical_uri("anthropic.synthetic-model-002:0");
+        assert_eq!(uri, "/model/anthropic.synthetic-model-002%3A0/converse");
     }
 
     #[test]
     fn canonical_uri_no_colon_unchanged() {
-        let uri = BedrockProvider::canonical_uri("anthropic.claude-sonnet-4-6");
-        assert_eq!(uri, "/model/anthropic.claude-sonnet-4-6/converse");
+        let uri = BedrockProvider::canonical_uri("anthropic.synthetic-model-016");
+        assert_eq!(uri, "/model/anthropic.synthetic-model-016/converse");
     }
 
     // ── Message conversion tests ────────────────────────────────

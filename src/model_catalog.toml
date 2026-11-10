@@ -1,0 +1,151 @@
+schema_version = 1
+
+[[models]]
+provider = "openai"
+id = "gpt-6-astra"
+name = "GPT-6 Astra"
+released = "2026-09-03"
+recommended = false
+aliases = []
+sources = [
+  "https://developers.openai.com/api/docs/changelog?mw_entry=2026-09-03-3f56515da8b13ccc",
+  "https://developers.openai.com/api/docs/pricing",
+]
+verified = "2026-11-09"
+
+[[models]]
+provider = "openai"
+id = "gpt-6-sol"
+name = "GPT-6 Sol"
+released = "2026-09-22"
+recommended = false
+aliases = []
+sources = [
+  "https://developers.openai.com/api/docs/changelog?mw_entry=2026-09-08-00c61e0b8e07ff81",
+  "https://developers.openai.com/api/docs/pricing",
+]
+verified = "2026-11-09"
+
+[[models]]
+provider = "openai"
+id = "gpt-6-luna"
+name = "GPT-6 Luna"
+released = "2026-09-22"
+recommended = false
+aliases = []
+sources = [
+  "https://developers.openai.com/api/docs/changelog?mw_entry=2026-09-08-00c61e0b8e07ff81",
+  "https://developers.openai.com/api/docs/pricing",
+]
+verified = "2026-11-09"
+
+[[models]]
+provider = "openai"
+id = "gpt-6.1-sol"
+name = "GPT-6.1 Sol"
+released = "2026-09-29"
+recommended = true
+aliases = []
+sources = [
+  "https://developers.openai.com/api/docs/changelog?mw_entry=2026-09-29-962e96e45069e83d",
+  "https://developers.openai.com/api/docs/pricing",
+]
+verified = "2026-11-09"
+
+[[models]]
+provider = "openai"
+id = "gpt-6.1-terra"
+name = "GPT-6.1 Terra"
+released = "2026-10-26"
+recommended = false
+aliases = []
+sources = [
+  "https://developers.openai.com/api/docs/changelog",
+  "https://developers.openai.com/api/docs/models/gpt-6.1-terra",
+]
+verified = "2026-11-09"
+
+[[models]]
+provider = "anthropic"
+id = "claude-opus-5-5"
+name = "Claude Opus 5.5"
+released = "2026-09-22"
+recommended = true
+aliases = []
+input_price_per_million = 4.0
+output_price_per_million = 20.0
+sources = [
+  "https://platform.claude.com/docs/en/models/opus-5-5/overview",
+  "https://platform.claude.com/docs/en/about-claude/models/choosing-a-model",
+]
+verified = "2026-11-09"
+
+[[models]]
+provider = "anthropic"
+id = "claude-sonnet-5-5"
+name = "Claude Sonnet 5.5"
+released = "2026-09-28"
+recommended = false
+aliases = []
+input_price_per_million = 2.0
+output_price_per_million = 10.0
+sources = [
+  "https://platform.claude.com/docs/en/models/sonnet-5-5/overview",
+  "https://www.anthropic.com/claude-sonnet-5-5",
+]
+verified = "2026-11-09"
+
+[[models]]
+provider = "anthropic"
+id = "claude-haiku-5-5"
+name = "Claude Haiku 5.5"
+released = "2026-10-07"
+recommended = false
+aliases = []
+sources = [
+  "https://platform.claude.com/docs/en/models/haiku-5-5/overview",
+  "https://www.anthropic.com/claude-haiku-5-5",
+]
+verified = "2026-11-09"
+
+[[models]]
+provider = "anthropic"
+id = "claude-fable-5-2"
+name = "Claude Fable 5.2"
+released = "2026-11-09"
+recommended = false
+aliases = []
+input_price_per_million = 8.0
+output_price_per_million = 40.0
+sources = [
+  "https://platform.claude.com/docs/en/models/fable-5-2/overview",
+  "https://platform.claude.com/docs/en/release-notes/overview",
+]
+verified = "2026-11-09"
+
+[[models]]
+provider = "gemini"
+id = "gemini-3.8-flash"
+name = "Gemini 3.8 Flash"
+released = "2026-09-02"
+recommended = true
+aliases = []
+sources = [
+  "https://blog.google/innovation-and-ai/models-and-research/gemini-models/3-8-flash-and-3-8-flash-cyber/",
+  "https://ai.google.dev/gemini-api/docs/latest-model",
+  "https://ai.google.dev/gemini-api/docs/pricing",
+]
+verified = "2026-11-09"
+
+[[models]]
+provider = "gemini"
+id = "gemini-4-argon"
+name = "Gemini 4 Argon"
+released = "2026-10-13"
+recommended = false
+aliases = []
+sources = [
+  "https://blog.google/innovation-and-ai/models-and-research/gemini-models/introducing-gemini-4-argon/",
+  "https://ai.google.dev/gemini-api/docs/pricing",
+]
+verified = "2026-11-09"

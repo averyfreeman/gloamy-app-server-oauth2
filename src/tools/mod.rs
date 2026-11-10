@@ -600,7 +600,7 @@ mod tests {
             "researcher".to_string(),
             DelegateAgentConfig {
                 provider: "ollama".to_string(),
-                model: "llama3".to_string(),
+                model: "synthetic-model-048".to_string(),
                 system_prompt: None,
                 api_key: None,
                 temperature: None,

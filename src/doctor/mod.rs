@@ -416,6 +416,20 @@ pub fn run_traces(
 
 // ── Config semantic validation ───────────────────────────────────
 
+fn check_model_selection(
+    config: &Config,
+    catalog: &crate::model_catalog::Catalog,
+    as_of: chrono::NaiveDate,
+) -> DiagItem {
+    let provider = crate::providers::canonical_provider_name(
+        config.default_provider.as_deref().unwrap_or("openai"),
+    );
+    match catalog.require_model(provider, config.default_model.as_deref(), as_of) {
+        Ok(model) => DiagItem::ok("config", format!("default model: {model}")),
+        Err(error) => DiagItem::warn("config", error.to_string()),
+    }
+}
+
 fn check_config_semantics(config: &Config, items: &mut Vec<DiagItem>) {
     let cat = "config";
 
@@ -461,18 +475,11 @@ fn check_config_semantics(config: &Config, items: &mut Vec<DiagItem>) {
         }
     }
 
-    // Model configured
-    if config.default_model.is_some() {
-        items.push(DiagItem::ok(
-            cat,
-            format!(
-                "default model: {}",
-                config.default_model.as_deref().unwrap_or("?")
-            ),
-        ));
-    } else {
-        items.push(DiagItem::warn(cat, "no default_model configured"));
-    }
+    items.push(check_model_selection(
+        config,
+        &crate::model_catalog::global().snapshot(),
+        crate::model_catalog::today(),
+    ));
 
     // Temperature range
     if config.default_temperature >= 0.0 && config.default_temperature <= 2.0 {
@@ -1120,6 +1127,37 @@ mod tests {
     }
 
     #[test]
+    fn model_diagnostic_uses_eligible_recommendations_and_preserves_selections() {
+        let catalog = crate::model_catalog::Catalog::parse(
+            r#"schema_version = 1
+[[models]]
+provider = "gemini"
+id = "synthetic-recommendation"
+name = "Synthetic recommendation"
+released = "2026-11-01"
+verified = "2026-11-09"
+recommended = true
+sources = ["https://example.com/release"]
+"#,
+        )
+        .unwrap();
+        let mut config = Config::default();
+        config.default_provider = Some("google".into());
+        let date = chrono::NaiveDate::from_ymd_opt(2026, 11, 9).unwrap();
+        let item = check_model_selection(&config, &catalog, date);
+        assert_eq!(item.severity, Severity::Ok);
+        assert!(item.message.contains("synthetic-recommendation"));
+        let expired = chrono::NaiveDate::from_ymd_opt(2027, 8, 1).unwrap();
+        let item = check_model_selection(&config, &catalog, expired);
+        assert_eq!(item.severity, Severity::Warn);
+        assert!(item.message.contains("no eligible recommended model"));
+        config.default_model = Some("arbitrary-preserved-model".into());
+        let item = check_model_selection(&config, &catalog, expired);
+        assert_eq!(item.severity, Severity::Ok);
+        assert!(item.message.contains("arbitrary-preserved-model"));
+    }
+
+    #[test]
     fn config_validation_accepts_custom_provider() {
         let mut config = Config::default();
         config.default_provider = Some("custom:https://my-api.com".into());
@@ -1201,7 +1239,7 @@ mod tests {
         config.embedding_routes = vec![crate::config::EmbeddingRouteConfig {
             hint: "semantic".into(),
             provider: "groq".into(),
-            model: "text-embedding-3-small".into(),
+            model: "synthetic-embedding-model".into(),
             dimensions: None,
             api_key: None,
         }];

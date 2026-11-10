@@ -2,7 +2,7 @@
 
 This guide focuses on common setup/runtime failures and fast resolution paths.
 
-Last verified: **April 5, 2026**.
+Last verified: **November 9, 2026**.
 
 ## Installation / Bootstrap
 
@@ -319,6 +319,36 @@ curl -fsSL https://raw.githubusercontent.com/iBz-04/gloamy/main/scripts/install.
 ```
 
 `install.sh` is a compatibility entry and forwards/falls back to bootstrap behavior.
+
+## Model Selection and Catalog
+
+### No eligible default model
+
+**Symptom:** Startup, onboarding, or a new operation says a model ID is required.
+
+**Cause:** The provider has no recommended model within the catalog's eight-calendar-month release window, or its metadata has not been verified.
+
+**Fix:** Discover IDs from the configured provider, inspect the results, then choose one explicitly:
+
+```bash
+gloamy models refresh --provider <PROVIDER_ID>
+gloamy models list --provider <PROVIDER_ID>
+gloamy models set <EXACT_MODEL_ID>
+```
+
+You can also set `default_model` in `config.toml`. Gloamy preserves configured and dynamically discovered IDs when they are not in the curated catalog.
+
+### Invalid local catalog
+
+**Symptom:** Config loading fails with a `model-catalog.toml` parse or validation error, or authenticated reload returns `400`.
+
+**Fix:** Correct the complete local file or remove it if the bundled catalog is desired. A present invalid file does not fall back to the bundled file. A failed reload in a running daemon keeps its last valid in-memory snapshot; run `gloamy models list` locally to see the loading error. Daemon logs omit file contents.
+
+### Cost is zero or lower than expected
+
+An unknown model rate is represented as zero while input/output token counts are still recorded. This means unknown, not free, and leaves cost totals and budget calculations as lower bounds. Add a verified exact entry under `[cost.prices]` when you know the applicable rate. The catalog does not infer aliases, suffix matches, or OpenAI API prices for Codex subscription/OAuth usage.
+
+See the [catalog and pricing reference](config-reference.md#curated-model-catalog) and [gateway reload endpoint](gateway-api-reference.md#post-apimodelscatalogreload).
 
 ## Still Stuck?
 

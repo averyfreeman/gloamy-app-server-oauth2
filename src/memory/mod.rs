@@ -528,7 +528,7 @@ mod tests {
     fn resolve_embedding_config_uses_base_config_when_model_is_not_hint() {
         let cfg = MemoryConfig {
             embedding_provider: "openai".into(),
-            embedding_model: "text-embedding-3-small".into(),
+            embedding_model: "synthetic-embedding-model".into(),
             embedding_dimensions: 1536,
             ..MemoryConfig::default()
         };
@@ -538,7 +538,7 @@ mod tests {
             resolved,
             ResolvedEmbeddingConfig {
                 provider: "openai".into(),
-                model: "text-embedding-3-small".into(),
+                model: "synthetic-embedding-model".into(),
                 dimensions: 1536,
                 api_key: Some("base-key".into()),
             }
@@ -605,7 +605,7 @@ mod tests {
         let routes = vec![EmbeddingRouteConfig {
             hint: "semantic".into(),
             provider: String::new(),
-            model: "text-embedding-3-small".into(),
+            model: "synthetic-embedding-model".into(),
             dimensions: Some(0),
             api_key: None,
         }];

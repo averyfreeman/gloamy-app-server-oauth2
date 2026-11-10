@@ -33,7 +33,7 @@ mod tests {
         let config = Config::default();
 
         assert!(config.default_provider.is_some());
-        assert!(config.default_model.is_some());
+        assert!(config.default_model.is_none());
         assert!(config.default_temperature > 0.0);
     }
 

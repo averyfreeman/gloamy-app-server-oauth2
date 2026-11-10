@@ -153,7 +153,7 @@ interrupt_on_new_message = false  # optional: cancel in-flight same-sender same-
 
 [transcription]
 enabled = true
-model = "whisper-large-v3-turbo"  # optional
+model = "MODEL_ID_FROM_PROVIDER_DISCOVERY"  # required when enabled
 max_duration_secs = 120           # optional
 
 [tts]
@@ -168,6 +168,7 @@ Telegram notes:
 - `interrupt_on_new_message = true` preserves interrupted user turns in conversation history, then restarts generation on the newest message.
 - Interruption scope is strict: same sender in the same chat. Messages from different chats are processed independently.
 - When `transcription.enabled = true`, Telegram voice messages are transcribed before they enter the agent loop.
+- Transcription, text-to-speech, and embedding model IDs are explicit configuration. Gloamy does not choose an unverified built-in default; configure the exact ID exposed by the endpoint before enabling each feature.
 - When `tts.enabled = true`, Telegram can send synthesized voice replies through `sendVoice`.
 - `tts.voice_reply_mode = "voice_only"` suppresses the text reply for inbound voice messages and sends only the synthesized voice note.
 - `tts.voice_reply_mode = "voice_plus_text"` keeps the normal text reply and adds a synthesized voice note after it.

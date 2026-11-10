@@ -28,7 +28,7 @@ async fn provider_vision_support() -> Result<()> {
     println!("Creating Gemini provider...");
     let provider = gloamy::providers::create_provider("gemini", None)?;
     let provider_name = "gemini";
-    let model = "gemini-2.5-pro";
+    let model = "synthetic-model-023";
 
     println!("✓ Created {} provider", provider_name);
 
@@ -62,7 +62,7 @@ async fn provider_vision_support() -> Result<()> {
         eprintln!("Creating minimal 1x1 PNG...");
 
         // Create minimal PNG if missing
-        use base64::{engine::general_purpose, Engine as _};
+        use base64::{Engine as _, engine::general_purpose};
         let png_data = general_purpose::STANDARD.decode(
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
         )?;
@@ -155,7 +155,7 @@ async fn openai_codex_second_vision_support() -> Result<()> {
 
     let provider = gloamy::providers::create_provider_with_options("openai-codex", None, &opts)?;
     let provider_name = "openai-codex:second";
-    let model = "gpt-5.3-codex";
+    let model = "synthetic-model-039";
 
     println!("✓ Created {} provider", provider_name);
 
@@ -184,7 +184,7 @@ async fn openai_codex_second_vision_support() -> Result<()> {
         eprintln!("Creating minimal 1x1 PNG...");
 
         // Create minimal PNG if missing
-        use base64::{engine::general_purpose, Engine as _};
+        use base64::{Engine as _, engine::general_purpose};
         let png_data = general_purpose::STANDARD.decode(
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
         )?;

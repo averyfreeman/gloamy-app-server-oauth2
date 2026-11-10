@@ -672,7 +672,7 @@ impl Provider for OllamaProvider {
 
     fn supports_native_tools(&self) -> bool {
         // Ollama's /api/chat supports native function-calling for capable models
-        // (qwen2.5, llama3.1, mistral-nemo, etc.). chat_with_tools() sends tool
+        // that advertise tool support. chat_with_tools() sends tool
         // definitions in the request and returns structured ToolCall objects.
         true
     }
@@ -757,8 +757,10 @@ mod tests {
     #[test]
     fn cloud_suffix_strips_model_name() {
         let p = OllamaProvider::new(Some("https://ollama.com"), Some("ollama-key"));
-        let (model, should_auth) = p.resolve_request_details("qwen3:cloud").unwrap();
-        assert_eq!(model, "qwen3");
+        let (model, should_auth) = p
+            .resolve_request_details("synthetic-model-056:cloud")
+            .unwrap();
+        assert_eq!(model, "synthetic-model-056");
         assert!(should_auth);
     }
 
@@ -766,43 +768,49 @@ mod tests {
     fn cloud_suffix_with_local_endpoint_errors() {
         let p = OllamaProvider::new(None, Some("ollama-key"));
         let error = p
-            .resolve_request_details("qwen3:cloud")
+            .resolve_request_details("synthetic-model-056:cloud")
             .expect_err("cloud suffix should fail on local endpoint");
-        assert!(error
-            .to_string()
-            .contains("requested cloud routing, but Ollama endpoint is local"));
+        assert!(
+            error
+                .to_string()
+                .contains("requested cloud routing, but Ollama endpoint is local")
+        );
     }
 
     #[test]
     fn cloud_suffix_without_api_key_errors() {
         let p = OllamaProvider::new(Some("https://ollama.com"), None);
         let error = p
-            .resolve_request_details("qwen3:cloud")
+            .resolve_request_details("synthetic-model-056:cloud")
             .expect_err("cloud suffix should require API key");
-        assert!(error
-            .to_string()
-            .contains("requested cloud routing, but no API key is configured"));
+        assert!(
+            error
+                .to_string()
+                .contains("requested cloud routing, but no API key is configured")
+        );
     }
 
     #[test]
     fn remote_endpoint_auth_enabled_when_key_present() {
         let p = OllamaProvider::new(Some("https://ollama.com"), Some("ollama-key"));
-        let (_model, should_auth) = p.resolve_request_details("qwen3").unwrap();
+        let (_model, should_auth) = p.resolve_request_details("synthetic-model-056").unwrap();
         assert!(should_auth);
     }
 
     #[test]
     fn remote_endpoint_with_api_suffix_still_allows_cloud_models() {
         let p = OllamaProvider::new(Some("https://ollama.com/api"), Some("ollama-key"));
-        let (model, should_auth) = p.resolve_request_details("qwen3:cloud").unwrap();
-        assert_eq!(model, "qwen3");
+        let (model, should_auth) = p
+            .resolve_request_details("synthetic-model-056:cloud")
+            .unwrap();
+        assert_eq!(model, "synthetic-model-056");
         assert!(should_auth);
     }
 
     #[test]
     fn local_endpoint_auth_disabled_even_with_key() {
         let p = OllamaProvider::new(None, Some("ollama-key"));
-        let (_model, should_auth) = p.resolve_request_details("llama3").unwrap();
+        let (_model, should_auth) = p.resolve_request_details("synthetic-model-048").unwrap();
         assert!(!should_auth);
     }
 
@@ -817,7 +825,7 @@ mod tests {
                 tool_calls: None,
                 tool_name: None,
             }],
-            "llama3",
+            "synthetic-model-048",
             0.7,
             None,
         );
@@ -837,7 +845,7 @@ mod tests {
                 tool_calls: None,
                 tool_name: None,
             }],
-            "llama3",
+            "synthetic-model-048",
             0.7,
             None,
         );
@@ -874,7 +882,7 @@ mod tests {
 
     #[test]
     fn fallback_text_for_empty_content_without_thinking_is_generic() {
-        let text = OllamaProvider::fallback_text_for_empty_content("qwen3-coder", None);
+        let text = OllamaProvider::fallback_text_for_empty_content("synthetic-model-057", None);
         assert!(text.contains("couldn't get a complete response from Ollama"));
     }
 

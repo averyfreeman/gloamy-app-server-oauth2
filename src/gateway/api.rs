@@ -5,7 +5,7 @@
 use super::AppState;
 use axum::{
     extract::{Path, Query, State},
-    http::{header, HeaderMap, StatusCode},
+    http::{HeaderMap, StatusCode, header},
     response::{IntoResponse, Json},
 };
 use chrono::Utc;
@@ -44,6 +44,49 @@ fn require_auth(
                 "error": "Unauthorized — pair first via POST /pair, then send Authorization: Bearer <token>"
             })),
         ))
+    }
+}
+
+/// Reload the complete catalog from the active config directory.
+/// This mutation always requires a valid bearer token, including when pairing is disabled.
+pub async fn handle_api_catalog_reload(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    if !extract_bearer_token(&headers)
+        .is_some_and(|token| state.pairing.is_valid_bearer_token(token))
+    {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({
+                "error": "A valid paired bearer token is required"
+            })),
+        );
+    }
+    let directory = {
+        let config = state.config.lock();
+        config.config_path.parent().map(FsPath::to_path_buf)
+    };
+    let Some(directory) = directory else {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "error": "Active config directory is unavailable"
+            })),
+        );
+    };
+    match crate::model_catalog::global().load_from_dir(&directory) {
+        Ok(()) => (StatusCode::OK, Json(serde_json::json!({"reloaded": true}))),
+        Err(_) => {
+            // TOML errors can contain source lines. Never put file payloads in daemon logs.
+            tracing::warn!("Model catalog reload rejected; last valid snapshot retained");
+            (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "error": "Catalog reload failed; last valid snapshot retained"
+                })),
+            )
+        }
     }
 }
 
@@ -394,7 +437,7 @@ pub async fn handle_api_status(
 
     let body = serde_json::json!({
         "provider": config.default_provider,
-        "model": state.model,
+        "model": super::current_model(&state).ok(),
         "temperature": state.temperature,
         "uptime_seconds": health.uptime_seconds,
         "gateway_port": config.gateway.port,
@@ -1401,13 +1444,13 @@ mod tests {
         cfg.model_routes = vec![crate::config::schema::ModelRouteConfig {
             hint: "reasoning".to_string(),
             provider: "openrouter".to_string(),
-            model: "anthropic/claude-sonnet-4.6".to_string(),
+            model: "anthropic/synthetic-model-017".to_string(),
             api_key: Some("route-model-key".to_string()),
         }];
         cfg.embedding_routes = vec![crate::config::schema::EmbeddingRouteConfig {
             hint: "semantic".to_string(),
             provider: "openai".to_string(),
-            model: "text-embedding-3-small".to_string(),
+            model: "synthetic-embedding-model".to_string(),
             dimensions: Some(1536),
             api_key: Some("route-embed-key".to_string()),
         }];
@@ -1535,13 +1578,13 @@ mod tests {
             crate::config::schema::ModelRouteConfig {
                 hint: "reasoning".to_string(),
                 provider: "openrouter".to_string(),
-                model: "anthropic/claude-sonnet-4.6".to_string(),
+                model: "anthropic/synthetic-model-017".to_string(),
                 api_key: Some("route-model-key-1".to_string()),
             },
             crate::config::schema::ModelRouteConfig {
                 hint: "fast".to_string(),
                 provider: "openrouter".to_string(),
-                model: "openai/gpt-4.1-mini".to_string(),
+                model: "openai/synthetic-model-034".to_string(),
                 api_key: Some("route-model-key-2".to_string()),
             },
         ];
@@ -1549,21 +1592,21 @@ mod tests {
             crate::config::schema::EmbeddingRouteConfig {
                 hint: "semantic".to_string(),
                 provider: "openai".to_string(),
-                model: "text-embedding-3-small".to_string(),
+                model: "synthetic-embedding-model".to_string(),
                 dimensions: Some(1536),
                 api_key: Some("route-embed-key-1".to_string()),
             },
             crate::config::schema::EmbeddingRouteConfig {
                 hint: "archive".to_string(),
                 provider: "custom:https://emb.example.com/v1".to_string(),
-                model: "bge-m3".to_string(),
+                model: "synthetic-embedding-alt".to_string(),
                 dimensions: Some(1024),
                 api_key: Some("route-embed-key-2".to_string()),
             },
         ];
 
         let mut incoming = mask_sensitive_fields(&current);
-        incoming.default_model = Some("gpt-4.1-mini".to_string());
+        incoming.default_model = Some("synthetic-model-034".to_string());
         // Simulate UI changing only one key and keeping the first masked.
         incoming.reliability.api_keys = vec![MASKED_SECRET.to_string(), "r2-new".to_string()];
         incoming.gateway.paired_tokens = vec![MASKED_SECRET.to_string(), "pair-2-new".to_string()];
@@ -1593,7 +1636,10 @@ mod tests {
         assert_eq!(hydrated.config_path, current.config_path);
         assert_eq!(hydrated.workspace_dir, current.workspace_dir);
         assert_eq!(hydrated.api_key, current.api_key);
-        assert_eq!(hydrated.default_model.as_deref(), Some("gpt-4.1-mini"));
+        assert_eq!(
+            hydrated.default_model.as_deref(),
+            Some("synthetic-model-034")
+        );
         assert_eq!(
             hydrated.reliability.api_keys,
             vec!["r1".to_string(), "r2-new".to_string()]
@@ -1687,13 +1733,13 @@ mod tests {
             crate::config::schema::ModelRouteConfig {
                 hint: "reasoning".to_string(),
                 provider: "openrouter".to_string(),
-                model: "anthropic/claude-sonnet-4.6".to_string(),
+                model: "anthropic/synthetic-model-017".to_string(),
                 api_key: Some("route-model-key-1".to_string()),
             },
             crate::config::schema::ModelRouteConfig {
                 hint: "fast".to_string(),
                 provider: "openrouter".to_string(),
-                model: "openai/gpt-4.1-mini".to_string(),
+                model: "openai/synthetic-model-034".to_string(),
                 api_key: Some("route-model-key-2".to_string()),
             },
         ];
@@ -1701,14 +1747,14 @@ mod tests {
             crate::config::schema::EmbeddingRouteConfig {
                 hint: "semantic".to_string(),
                 provider: "openai".to_string(),
-                model: "text-embedding-3-small".to_string(),
+                model: "synthetic-embedding-model".to_string(),
                 dimensions: Some(1536),
                 api_key: Some("route-embed-key-1".to_string()),
             },
             crate::config::schema::EmbeddingRouteConfig {
                 hint: "archive".to_string(),
                 provider: "custom:https://emb.example.com/v1".to_string(),
-                model: "bge-m3".to_string(),
+                model: "synthetic-embedding-alt".to_string(),
                 dimensions: Some(1024),
                 api_key: Some("route-embed-key-2".to_string()),
             },
@@ -1722,7 +1768,7 @@ mod tests {
             .push(crate::config::schema::ModelRouteConfig {
                 hint: "new".to_string(),
                 provider: "openai".to_string(),
-                model: "gpt-4.1".to_string(),
+                model: "synthetic-model-033".to_string(),
                 api_key: Some(MASKED_SECRET.to_string()),
             });
         incoming
@@ -1730,7 +1776,7 @@ mod tests {
             .push(crate::config::schema::EmbeddingRouteConfig {
                 hint: "new-embed".to_string(),
                 provider: "custom:https://emb2.example.com/v1".to_string(),
-                model: "bge-small".to_string(),
+                model: "synthetic-embedding-small".to_string(),
                 dimensions: Some(768),
                 api_key: Some(MASKED_SECRET.to_string()),
             });
@@ -1755,14 +1801,18 @@ mod tests {
             Some("route-embed-key-1")
         );
         assert_eq!(hydrated.embedding_routes[2].api_key, None);
-        assert!(hydrated
-            .model_routes
-            .iter()
-            .all(|route| route.api_key.as_deref() != Some(MASKED_SECRET)));
-        assert!(hydrated
-            .embedding_routes
-            .iter()
-            .all(|route| route.api_key.as_deref() != Some(MASKED_SECRET)));
+        assert!(
+            hydrated
+                .model_routes
+                .iter()
+                .all(|route| route.api_key.as_deref() != Some(MASKED_SECRET))
+        );
+        assert!(
+            hydrated
+                .embedding_routes
+                .iter()
+                .all(|route| route.api_key.as_deref() != Some(MASKED_SECRET))
+        );
     }
 
     #[test]
@@ -1772,10 +1822,12 @@ mod tests {
 
         let err = validate_cron_mutation_enabled(&config, "add").unwrap_err();
         assert_eq!(err.0, StatusCode::BAD_REQUEST);
-        assert!(err.1 .0["error"]
-            .as_str()
-            .unwrap_or("")
-            .contains("cron.enabled=false"));
+        assert!(
+            err.1.0["error"]
+                .as_str()
+                .unwrap_or("")
+                .contains("cron.enabled=false")
+        );
     }
 
     #[test]
@@ -1793,7 +1845,7 @@ mod tests {
         .unwrap_err();
 
         assert_eq!(err.0, StatusCode::BAD_REQUEST);
-        assert_eq!(err.1 .0["error"], "command must not be empty");
+        assert_eq!(err.1.0["error"], "command must not be empty");
     }
 
     #[test]
@@ -1840,9 +1892,11 @@ mod tests {
         .unwrap_err();
 
         assert_eq!(err.0, StatusCode::BAD_REQUEST);
-        assert!(err.1 .0["error"]
-            .as_str()
-            .unwrap_or("")
-            .contains("Command not allowed by security policy"));
+        assert!(
+            err.1.0["error"]
+                .as_str()
+                .unwrap_or("")
+                .contains("Command not allowed by security policy")
+        );
     }
 }

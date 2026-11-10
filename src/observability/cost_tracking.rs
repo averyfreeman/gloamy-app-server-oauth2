@@ -5,45 +5,13 @@ use std::any::Any;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-fn matches_model_key(configured_key: &str, provider: &str, model: &str) -> bool {
-    let configured_lower = configured_key.trim().to_ascii_lowercase();
-    let provider_lower = provider.trim().to_ascii_lowercase();
-    let model_lower = model.trim().to_ascii_lowercase();
-
-    if configured_lower.is_empty() || model_lower.is_empty() {
-        return false;
-    }
-
-    if configured_lower == model_lower || model_lower.starts_with(&(configured_lower.clone() + "-"))
-    {
-        return true;
-    }
-
-    let configured_tail = configured_lower
-        .split('/')
-        .next_back()
-        .unwrap_or(configured_lower.as_str());
-
-    if configured_tail == model_lower
-        || model_lower.starts_with(&(configured_tail.to_string() + "-"))
-    {
-        return true;
-    }
-
-    if provider_lower.is_empty() {
-        return false;
-    }
-
-    let provider_model = format!("{provider_lower}/{model_lower}");
-    configured_lower == provider_model || provider_model.starts_with(&(configured_lower + "-"))
-}
-
 /// Observer wrapper that intercepts `LlmResponse` events and records token
 /// usage to a [`CostTracker`], then delegates all events to an inner observer.
 pub struct CostTrackingObserver {
     inner: Arc<dyn Observer>,
     cost_tracker: Arc<CostTracker>,
     prices: HashMap<String, ModelPricing>,
+    catalog: Arc<crate::model_catalog::CatalogStore>,
 }
 
 impl CostTrackingObserver {
@@ -56,42 +24,32 @@ impl CostTrackingObserver {
             inner,
             cost_tracker,
             prices,
+            catalog: Arc::clone(crate::model_catalog::global()),
         }
     }
 
     fn model_prices(&self, provider: &str, model: &str) -> (f64, f64) {
-        let model_trimmed = model.trim();
-        let provider_trimmed = provider.trim();
-
-        if model_trimmed.is_empty() {
-            return (0.0, 0.0);
+        let canonical_provider = crate::providers::canonical_provider_name(provider);
+        // Explicit provider/model keys win. A slash-containing model ID must
+        // use a qualified key so another provider's override cannot leak into it.
+        let price = self
+            .prices
+            .get(&format!("{provider}/{model}"))
+            .or_else(|| self.prices.get(&format!("{canonical_provider}/{model}")))
+            .or_else(|| {
+                if model.contains('/') {
+                    None
+                } else {
+                    self.prices.get(model)
+                }
+            });
+        if let Some(price) = price {
+            return (price.input, price.output);
         }
-
-        let direct_keys = [
-            model_trimmed.to_string(),
-            model_trimmed.to_ascii_lowercase(),
-            format!("{provider_trimmed}/{model_trimmed}"),
-            format!(
-                "{}/{}",
-                provider_trimmed.to_ascii_lowercase(),
-                model_trimmed.to_ascii_lowercase()
-            ),
-        ];
-
-        for key in direct_keys {
-            if let Some(pricing) = self.prices.get(&key) {
-                return (pricing.input, pricing.output);
-            }
-        }
-
-        let model_lower = model_trimmed.to_ascii_lowercase();
-        for (configured_key, pricing) in &self.prices {
-            if matches_model_key(configured_key, provider_trimmed, &model_lower) {
-                return (pricing.input, pricing.output);
-            }
-        }
-
-        (0.0, 0.0)
+        self.catalog
+            .snapshot()
+            .pricing(canonical_provider, model, chrono::Utc::now().date_naive())
+            .unwrap_or((0.0, 0.0))
     }
 }
 
@@ -174,7 +132,7 @@ mod tests {
         let (_tmp, tracker) = test_tracker();
         let mut prices = HashMap::new();
         prices.insert(
-            "openai/gpt-4".to_string(),
+            "openai/synthetic-model-032".to_string(),
             ModelPricing {
                 input: 2.0,
                 output: 4.0,
@@ -184,7 +142,7 @@ mod tests {
 
         obs.record_event(&ObserverEvent::LlmResponse {
             provider: "openai".into(),
-            model: "gpt-4".into(),
+            model: "synthetic-model-032".into(),
             duration: Duration::from_millis(500),
             success: true,
             error_message: None,
@@ -205,7 +163,7 @@ mod tests {
 
         obs.record_event(&ObserverEvent::LlmResponse {
             provider: "openai".into(),
-            model: "gpt-4".into(),
+            model: "synthetic-model-032".into(),
             duration: Duration::from_millis(100),
             success: false,
             error_message: Some("rate limited".into()),
@@ -237,7 +195,7 @@ mod tests {
 
         obs.record_event(&ObserverEvent::LlmResponse {
             provider: "openai".into(),
-            model: "gpt-4.1-mini".into(),
+            model: "synthetic-model-034".into(),
             duration: Duration::from_millis(300),
             success: true,
             error_message: None,
@@ -252,11 +210,11 @@ mod tests {
     }
 
     #[test]
-    fn matches_snapshot_suffix_to_base_model_price() {
+    fn does_not_infer_snapshot_suffix_prices() {
         let (_tmp, tracker) = test_tracker();
         let mut prices = HashMap::new();
         prices.insert(
-            "openai/gpt-5.4-mini".to_string(),
+            "openai/synthetic-model-040".to_string(),
             ModelPricing {
                 input: 0.75,
                 output: 4.5,
@@ -266,7 +224,7 @@ mod tests {
 
         obs.record_event(&ObserverEvent::LlmResponse {
             provider: "openai".into(),
-            model: "gpt-5.4-mini-2026-03-17".into(),
+            model: "synthetic-model-041".into(),
             duration: Duration::from_millis(300),
             success: true,
             error_message: None,
@@ -277,15 +235,15 @@ mod tests {
         let summary = tracker.get_summary().unwrap();
         assert_eq!(summary.total_tokens, 150);
         assert_eq!(summary.request_count, 1);
-        assert!((summary.session_cost_usd - 0.0003).abs() < 1e-10);
+        assert_eq!(summary.session_cost_usd, 0.0);
     }
 
     #[test]
-    fn matches_provider_prefixed_snapshot_suffix_to_base_model_price() {
+    fn does_not_infer_provider_prefixed_snapshot_prices() {
         let (_tmp, tracker) = test_tracker();
         let mut prices = HashMap::new();
         prices.insert(
-            "openai/gpt-5.4-mini".to_string(),
+            "openai/synthetic-model-040".to_string(),
             ModelPricing {
                 input: 0.75,
                 output: 4.5,
@@ -295,7 +253,7 @@ mod tests {
 
         obs.record_event(&ObserverEvent::LlmResponse {
             provider: "openai".into(),
-            model: "openai/gpt-5.4-mini-2026-03-17".into(),
+            model: "openai/synthetic-model-041".into(),
             duration: Duration::from_millis(300),
             success: true,
             error_message: None,
@@ -306,6 +264,114 @@ mod tests {
         let summary = tracker.get_summary().unwrap();
         assert_eq!(summary.total_tokens, 150);
         assert_eq!(summary.request_count, 1);
-        assert!((summary.session_cost_usd - 0.0003).abs() < 1e-10);
+        assert_eq!(summary.session_cost_usd, 0.0);
+    }
+    #[test]
+    fn qualified_override_does_not_leak_to_subscription_provider() {
+        let (_tmp, tracker) = test_tracker();
+        let prices = HashMap::from([
+            (
+                "openai/synthetic-model".into(),
+                ModelPricing {
+                    input: 2.0,
+                    output: 4.0,
+                },
+            ),
+            (
+                "gemini/synthetic-model".into(),
+                ModelPricing {
+                    input: 3.0,
+                    output: 5.0,
+                },
+            ),
+        ]);
+        let observer = observer_with_prices(tracker, prices);
+        assert_eq!(
+            observer.model_prices("openai", "synthetic-model"),
+            (2.0, 4.0)
+        );
+        assert_eq!(
+            observer.model_prices("openai-codex", "synthetic-model"),
+            (0.0, 0.0)
+        );
+        assert_eq!(
+            observer.model_prices("openai-codex", "openai/synthetic-model"),
+            (0.0, 0.0)
+        );
+        assert_eq!(
+            observer.model_prices("google", "synthetic-model"),
+            (3.0, 5.0)
+        );
+    }
+
+    #[test]
+    fn subsequent_lookups_observe_reloads_and_overrides_win() {
+        let (_tmp, tracker) = test_tracker();
+        let directory = TempDir::new().unwrap();
+        let path = directory.path().join("model-catalog.toml");
+        let date = chrono::Utc::now().date_naive();
+        let document = |rate: f64| {
+            format!(
+                r#"schema_version = 1
+[[models]]
+provider = "provider-a"
+id = "synthetic-model"
+name = "Synthetic model"
+released = "{date}"
+verified = "{date}"
+sources = ["https://example.com/release"]
+input_price_per_million = {rate}
+output_price_per_million = 4.0
+"#
+            )
+        };
+        let store = Arc::new(crate::model_catalog::CatalogStore::new(
+            crate::model_catalog::Catalog::parse(&document(2.0)).unwrap(),
+        ));
+        let mut observer = observer_with_prices(tracker, HashMap::new());
+        observer.catalog = Arc::clone(&store);
+        assert_eq!(
+            observer.model_prices("provider-a", "synthetic-model"),
+            (2.0, 4.0)
+        );
+        std::fs::write(&path, document(3.0)).unwrap();
+        store.reload(directory.path()).unwrap();
+        assert_eq!(
+            observer.model_prices("provider-a", "synthetic-model"),
+            (3.0, 4.0)
+        );
+        observer.prices.insert(
+            "synthetic-model".into(),
+            ModelPricing {
+                input: 8.0,
+                output: 9.0,
+            },
+        );
+        observer.prices.insert(
+            "provider-a/synthetic-model".into(),
+            ModelPricing {
+                input: 5.0,
+                output: 6.0,
+            },
+        );
+        assert_eq!(
+            observer.model_prices("provider-a", "synthetic-model"),
+            (5.0, 6.0)
+        );
+        assert_eq!(
+            observer.model_prices("provider-b", "synthetic-model"),
+            (8.0, 9.0)
+        );
+        observer.prices.clear();
+        assert_eq!(
+            observer.model_prices("openai-codex", "synthetic-model"),
+            (0.0, 0.0)
+        );
+        std::fs::write(path, "invalid").unwrap();
+        assert!(store.reload(directory.path()).is_err());
+        assert_eq!(
+            observer.model_prices("provider-a", "synthetic-model"),
+            (3.0, 4.0)
+        );
     }
 }

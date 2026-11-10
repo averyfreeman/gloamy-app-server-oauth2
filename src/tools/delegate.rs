@@ -10,8 +10,8 @@ use crate::observability::runtime_trace;
 use crate::observability::traits::{Observer, ObserverEvent, ObserverMetric};
 use crate::perception::traits::{PerceptionProvider, ScreenState};
 use crate::providers::{self, Provider};
-use crate::security::policy::ToolOperation;
 use crate::security::SecurityPolicy;
+use crate::security::policy::ToolOperation;
 use async_trait::async_trait;
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -903,7 +903,7 @@ mod tests {
             "researcher".to_string(),
             DelegateAgentConfig {
                 provider: "ollama".to_string(),
-                model: "llama3".to_string(),
+                model: "synthetic-model-048".to_string(),
                 system_prompt: Some("You are a research assistant.".to_string()),
                 api_key: None,
                 temperature: Some(0.3),
@@ -917,7 +917,7 @@ mod tests {
             "coder".to_string(),
             DelegateAgentConfig {
                 provider: "openrouter".to_string(),
-                model: "anthropic/claude-sonnet-4-20250514".to_string(),
+                model: "anthropic/synthetic-model-014".to_string(),
                 system_prompt: None,
                 api_key: Some("delegate-test-credential".to_string()),
                 temperature: None,
@@ -1318,11 +1318,13 @@ mod tests {
             .await
             .unwrap();
         assert!(!result.success);
-        assert!(result
-            .error
-            .as_deref()
-            .unwrap_or("")
-            .contains("read-only mode"));
+        assert!(
+            result
+                .error
+                .as_deref()
+                .unwrap_or("")
+                .contains("read-only mode")
+        );
     }
 
     #[tokio::test]
@@ -1337,11 +1339,13 @@ mod tests {
             .await
             .unwrap();
         assert!(!result.success);
-        assert!(result
-            .error
-            .as_deref()
-            .unwrap_or("")
-            .contains("Rate limit exceeded"));
+        assert!(
+            result
+                .error
+                .as_deref()
+                .unwrap_or("")
+                .contains("Rate limit exceeded")
+        );
     }
 
     #[tokio::test]
@@ -1372,11 +1376,13 @@ mod tests {
             .unwrap();
 
         assert!(!result.success);
-        assert!(result
-            .error
-            .as_deref()
-            .unwrap_or("")
-            .contains("Failed to create provider"));
+        assert!(
+            result
+                .error
+                .as_deref()
+                .unwrap_or("")
+                .contains("Failed to create provider")
+        );
     }
 
     #[tokio::test]
@@ -1407,11 +1413,13 @@ mod tests {
             .unwrap();
 
         assert!(!result.success);
-        assert!(result
-            .error
-            .as_deref()
-            .unwrap_or("")
-            .contains("Failed to create provider"));
+        assert!(
+            result
+                .error
+                .as_deref()
+                .unwrap_or("")
+                .contains("Failed to create provider")
+        );
     }
 
     #[test]
@@ -1462,11 +1470,13 @@ mod tests {
             .unwrap();
 
         assert!(!result.success);
-        assert!(result
-            .error
-            .as_deref()
-            .unwrap_or("")
-            .contains("no executable tools"));
+        assert!(
+            result
+                .error
+                .as_deref()
+                .unwrap_or("")
+                .contains("no executable tools")
+        );
     }
 
     #[tokio::test]
@@ -1488,9 +1498,11 @@ mod tests {
         assert!(result.success, "{result:?}");
         assert!(result.output.contains("(openrouter/model-test, agentic)"));
         assert!(result.output.contains("done"));
-        assert!(result
-            .output
-            .contains("delegate_report mode=agentic agent=agentic"));
+        assert!(
+            result
+                .output
+                .contains("delegate_report mode=agentic agent=agentic")
+        );
         assert!(result.output.contains("tool_calls_total=1"));
         assert!(result.output.contains("tool_calls_success=1"));
         assert!(result.output.contains("tool_calls_failed=0"));
@@ -1557,11 +1569,13 @@ mod tests {
             .unwrap();
 
         assert!(!result.success);
-        assert!(result
-            .error
-            .as_deref()
-            .unwrap_or("")
-            .contains("no executable tools"));
+        assert!(
+            result
+                .error
+                .as_deref()
+                .unwrap_or("")
+                .contains("no executable tools")
+        );
     }
 
     #[tokio::test]
@@ -1577,11 +1591,13 @@ mod tests {
             .unwrap();
 
         assert!(!result.success);
-        assert!(result
-            .error
-            .as_deref()
-            .unwrap_or("")
-            .contains("maximum tool iterations (2)"));
+        assert!(
+            result
+                .error
+                .as_deref()
+                .unwrap_or("")
+                .contains("maximum tool iterations (2)")
+        );
     }
 
     #[tokio::test]
@@ -1597,10 +1613,12 @@ mod tests {
             .unwrap();
 
         assert!(!result.success);
-        assert!(result
-            .error
-            .as_deref()
-            .unwrap_or("")
-            .contains("provider boom"));
+        assert!(
+            result
+                .error
+                .as_deref()
+                .unwrap_or("")
+                .contains("provider boom")
+        );
     }
 }

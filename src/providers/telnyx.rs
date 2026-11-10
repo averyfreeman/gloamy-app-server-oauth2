@@ -1,8 +1,8 @@
 //! Telnyx AI inference provider.
 //!
 //! Telnyx provides AI inference through an OpenAI-compatible API at
-//! https://api.telnyx.com/v2/ai with access to 53+ models including
-//! GPT-4o, Claude, Llama, Mistral, and more.
+//! https://api.telnyx.com/v2/ai with access to multiple model vendors.
+//! Choose IDs through provider discovery.
 //!
 //! # Configuration
 //!
@@ -10,7 +10,7 @@
 //!
 //! ```toml
 //! default_provider = "telnyx"
-//! default_model = "openai/gpt-4o"
+//! default_model = "openai/synthetic-model-035"
 //! ```
 
 use crate::providers::traits::{ChatMessage, Provider};
@@ -21,8 +21,7 @@ use serde::Deserialize;
 /// Telnyx AI inference provider.
 ///
 /// Uses the OpenAI-compatible chat completions API at `/v2/ai/chat/completions`.
-/// Supports 53+ models including OpenAI, Anthropic (via API), Meta Llama,
-/// Mistral, and more.
+/// Discover available model IDs through the provider API.
 ///
 /// # Example
 ///
@@ -31,7 +30,7 @@ use serde::Deserialize;
 /// use gloamy::providers::Provider;
 ///
 /// let provider = TelnyxProvider::new(Some("your-api-key"));
-/// let response = provider.chat("Hello!", "openai/gpt-4o", 0.7).await?;
+/// let response = provider.chat("Hello!", "openai/synthetic-model-035", 0.7).await?;
 /// ```
 pub struct TelnyxProvider {
     /// Telnyx API key
@@ -289,24 +288,9 @@ impl Provider for TelnyxProvider {
     }
 }
 
-/// Popular Telnyx AI models for easy reference.
-pub mod models {
-    /// OpenAI GPT-4o (recommended for most tasks)
-    pub const GPT_4O: &str = "openai/gpt-4o";
-    /// OpenAI GPT-4o Mini (fast and cost-effective)
-    pub const GPT_4O_MINI: &str = "openai/gpt-4o-mini";
-    /// OpenAI GPT-4 Turbo
-    pub const GPT_4_TURBO: &str = "openai/gpt-4-turbo";
-    /// Anthropic Claude 3.5 Sonnet (via Telnyx proxy)
-    pub const CLAUDE_3_5_SONNET: &str = "anthropic/claude-3.5-sonnet";
-    /// Meta Llama 3.1 70B Instruct
-    pub const LLAMA_3_1_70B: &str = "meta-llama/llama-3.1-70b-instruct";
-    /// Meta Llama 3.1 8B Instruct (fast)
-    pub const LLAMA_3_1_8B: &str = "meta-llama/llama-3.1-8b-instruct";
-    /// Mistral Large
-    pub const MISTRAL_LARGE: &str = "mistralai/mistral-large";
-    /// Mistral Small (fast)
-    pub const MISTRAL_SMALL: &str = "mistralai/mistral-small";
+/// Eligible curated Telnyx models from the latest shared catalog snapshot.
+pub fn curated_models() -> Vec<crate::model_catalog::ModelEntry> {
+    crate::model_catalog::curated_models("telnyx")
 }
 
 #[cfg(test)]
@@ -326,14 +310,6 @@ mod tests {
     }
 
     #[test]
-    fn model_constants_are_valid() {
-        assert!(models::GPT_4O.starts_with("openai/"));
-        assert!(models::CLAUDE_3_5_SONNET.starts_with("anthropic/"));
-        assert!(models::LLAMA_3_1_70B.starts_with("meta-llama/"));
-        assert!(models::MISTRAL_LARGE.starts_with("mistralai/"));
-    }
-
-    #[test]
     fn resolve_key_from_parameter() {
         let key = resolve_telnyx_api_key(Some("direct-key"));
         assert_eq!(key, Some("direct-key".to_string()));
@@ -349,20 +325,20 @@ mod tests {
     fn models_response_deserializes() {
         let json = r#"{
             "data": [
-                {"id": "openai/gpt-4o"},
-                {"id": "anthropic/claude-3.5-sonnet"}
+                {"id": "openai/synthetic-model-035"},
+                {"id": "anthropic/synthetic-model-006"}
             ]
         }"#;
 
         let response: ModelsResponse = serde_json::from_str(json).unwrap();
         assert_eq!(response.data.len(), 2);
-        assert_eq!(response.data[0].id, "openai/gpt-4o");
+        assert_eq!(response.data[0].id, "openai/synthetic-model-035");
     }
 
     #[test]
     fn chat_request_serializes() {
         let req = ChatRequest {
-            model: "openai/gpt-4o".to_string(),
+            model: "openai/synthetic-model-035".to_string(),
             messages: vec![
                 Message {
                     role: "system".to_string(),
@@ -377,7 +353,7 @@ mod tests {
         };
 
         let json = serde_json::to_string(&req).unwrap();
-        assert!(json.contains("openai/gpt-4o"));
+        assert!(json.contains("openai/synthetic-model-035"));
         assert!(json.contains("system"));
         assert!(json.contains("user"));
     }

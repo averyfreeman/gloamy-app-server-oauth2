@@ -95,6 +95,7 @@ mod identity;
 mod integrations;
 mod memory;
 mod migration;
+mod model_catalog;
 mod multimodal;
 mod observability;
 mod onboard;
@@ -197,7 +198,7 @@ Use --message for single-shot queries without entering interactive mode.
 Examples:
   gloamy agent                              # interactive session
   gloamy agent -m \"Summarize today's logs\"  # single message
-  gloamy agent -p anthropic --model claude-sonnet-4-20250514")]
+  gloamy agent -p anthropic --model synthetic-model-014")]
     Agent {
         /// Single message mode (don't enter interactive mode)
         #[arg(short, long)]

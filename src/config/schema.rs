@@ -4,7 +4,7 @@ use crate::security::{AutonomyLevel, DomainMatcher};
 use anyhow::{Context, Result};
 use directories::UserDirs;
 use schemars::JsonSchema;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -125,7 +125,7 @@ pub struct Config {
     /// Default provider ID or alias (e.g. `"openai"`, `"openrouter"`, `"anthropic"`). Default: `"openai"`.
     #[serde(alias = "model_provider")]
     pub default_provider: Option<String>,
-    /// Default model routed through the selected provider (e.g. `"gpt-5-mini"`).
+    /// Default model routed through the selected provider (e.g. `"synthetic-model-037"`).
     #[serde(alias = "model")]
     pub default_model: Option<String>,
     /// Optional named provider profiles keyed by id (Codex app-server compatible layout).
@@ -335,7 +335,7 @@ fn default_transcription_api_url() -> String {
 }
 
 fn default_transcription_model() -> String {
-    "whisper-large-v3-turbo".into()
+    String::new()
 }
 
 fn default_transcription_max_duration_secs() -> u64 {
@@ -381,7 +381,7 @@ fn default_tts_api_url() -> String {
 }
 
 fn default_tts_model() -> String {
-    "tts-1".into()
+    String::new()
 }
 
 fn default_tts_voice() -> String {
@@ -680,11 +680,8 @@ pub struct CostConfig {
     #[serde(default)]
     pub allow_override: bool,
 
-    /// Per-model pricing (USD per 1M tokens)
-    #[serde(
-        default = "get_default_pricing",
-        deserialize_with = "deserialize_model_pricing_map"
-    )]
+    /// Explicit pricing overrides (USD per 1M tokens); catalog prices are resolved at lookup.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub prices: std::collections::HashMap<String, ModelPricing>,
 }
 
@@ -720,254 +717,10 @@ impl Default for CostConfig {
             monthly_limit_usd: default_monthly_limit(),
             warn_at_percent: default_warn_percent(),
             allow_override: false,
-            prices: get_default_pricing(),
+            prices: HashMap::new(),
         }
     }
 }
-
-fn deserialize_model_pricing_map<'de, D>(
-    deserializer: D,
-) -> std::result::Result<HashMap<String, ModelPricing>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let overrides = HashMap::<String, ModelPricing>::deserialize(deserializer)?;
-    let mut prices = get_default_pricing();
-    prices.extend(overrides);
-    Ok(prices)
-}
-
-/// Default pricing for popular models (USD per 1M tokens)
-fn get_default_pricing() -> std::collections::HashMap<String, ModelPricing> {
-    let mut prices = std::collections::HashMap::new();
-
-    // Anthropic models
-    prices.insert(
-        "anthropic/claude-sonnet-4-20250514".into(),
-        ModelPricing {
-            input: 3.0,
-            output: 15.0,
-        },
-    );
-    prices.insert(
-        "anthropic/claude-opus-4-20250514".into(),
-        ModelPricing {
-            input: 15.0,
-            output: 75.0,
-        },
-    );
-    prices.insert(
-        "anthropic/claude-3.5-sonnet".into(),
-        ModelPricing {
-            input: 3.0,
-            output: 15.0,
-        },
-    );
-    prices.insert(
-        "anthropic/claude-3-haiku".into(),
-        ModelPricing {
-            input: 0.25,
-            output: 1.25,
-        },
-    );
-    prices.insert(
-        "anthropic/claude-sonnet-4.6".into(),
-        ModelPricing {
-            input: 3.0,
-            output: 15.0,
-        },
-    );
-    prices.insert(
-        "anthropic/claude-sonnet-4-6".into(),
-        ModelPricing {
-            input: 3.0,
-            output: 15.0,
-        },
-    );
-    prices.insert(
-        "anthropic/claude-sonnet-4-5-20250929".into(),
-        ModelPricing {
-            input: 3.0,
-            output: 15.0,
-        },
-    );
-    prices.insert(
-        "anthropic/claude-haiku-4-5-20251001".into(),
-        ModelPricing {
-            input: 1.0,
-            output: 5.0,
-        },
-    );
-    prices.insert(
-        "anthropic.claude-sonnet-4-6".into(),
-        ModelPricing {
-            input: 3.0,
-            output: 15.0,
-        },
-    );
-    prices.insert(
-        "anthropic.claude-sonnet-4-5-20250929-v1:0".into(),
-        ModelPricing {
-            input: 3.0,
-            output: 15.0,
-        },
-    );
-    prices.insert(
-        "anthropic.claude-haiku-4-5-20251001-v1:0".into(),
-        ModelPricing {
-            input: 1.0,
-            output: 5.0,
-        },
-    );
-
-    // OpenAI models
-    prices.insert(
-        "openai/gpt-4o".into(),
-        ModelPricing {
-            input: 2.5,
-            output: 10.0,
-        },
-    );
-    prices.insert(
-        "openai/gpt-4o-mini".into(),
-        ModelPricing {
-            input: 0.15,
-            output: 0.60,
-        },
-    );
-    prices.insert(
-        "openai/o1-preview".into(),
-        ModelPricing {
-            input: 15.0,
-            output: 60.0,
-        },
-    );
-    prices.insert(
-        "openai/gpt-4.1".into(),
-        ModelPricing {
-            input: 2.0,
-            output: 8.0,
-        },
-    );
-    prices.insert(
-        "openai/gpt-4.1-mini".into(),
-        ModelPricing {
-            input: 0.4,
-            output: 1.6,
-        },
-    );
-    prices.insert(
-        "openai/gpt-4.1-nano".into(),
-        ModelPricing {
-            input: 0.1,
-            output: 0.4,
-        },
-    );
-    prices.insert(
-        "openai/gpt-5".into(),
-        ModelPricing {
-            input: 1.25,
-            output: 10.0,
-        },
-    );
-    prices.insert(
-        "openai/gpt-5-mini".into(),
-        ModelPricing {
-            input: 0.25,
-            output: 2.0,
-        },
-    );
-    prices.insert(
-        "openai/gpt-5-nano".into(),
-        ModelPricing {
-            input: 0.05,
-            output: 0.4,
-        },
-    );
-    prices.insert(
-        "openai/gpt-5.2".into(),
-        ModelPricing {
-            input: 1.75,
-            output: 14.0,
-        },
-    );
-    prices.insert(
-        "openai/gpt-5-codex".into(),
-        ModelPricing {
-            input: 1.25,
-            output: 10.0,
-        },
-    );
-    prices.insert(
-        "openai/gpt-5.2-codex".into(),
-        ModelPricing {
-            input: 1.75,
-            output: 14.0,
-        },
-    );
-    prices.insert(
-        "openai/gpt-5.4".into(),
-        ModelPricing {
-            input: 2.5,
-            output: 15.0,
-        },
-    );
-    prices.insert(
-        "openai/gpt-5.4-mini".into(),
-        ModelPricing {
-            input: 0.75,
-            output: 4.5,
-        },
-    );
-    prices.insert(
-        "openai/gpt-5.4-nano".into(),
-        ModelPricing {
-            input: 0.2,
-            output: 1.25,
-        },
-    );
-
-    // Google models
-    prices.insert(
-        "google/gemini-2.0-flash".into(),
-        ModelPricing {
-            input: 0.10,
-            output: 0.40,
-        },
-    );
-    prices.insert(
-        "google/gemini-1.5-pro".into(),
-        ModelPricing {
-            input: 1.25,
-            output: 5.0,
-        },
-    );
-    prices.insert(
-        "google/gemini-2.5-pro".into(),
-        ModelPricing {
-            input: 1.25,
-            output: 10.0,
-        },
-    );
-    prices.insert(
-        "google/gemini-2.5-flash".into(),
-        ModelPricing {
-            input: 0.30,
-            output: 2.50,
-        },
-    );
-    prices.insert(
-        "google/gemini-2.5-flash-lite".into(),
-        ModelPricing {
-            input: 0.10,
-            output: 0.40,
-        },
-    );
-
-    prices
-}
-
-// ── Gateway security ─────────────────────────────────────────────
 
 /// Gateway server configuration (`[gateway]` section).
 ///
@@ -2111,7 +1864,7 @@ pub struct MemoryConfig {
     /// Embedding provider: "none" | "openai" | "custom:URL"
     #[serde(default = "default_embedding_provider")]
     pub embedding_provider: String,
-    /// Embedding model name (e.g. "text-embedding-3-small")
+    /// Embedding model name (e.g. "synthetic-embedding-model")
     #[serde(default = "default_embedding_model")]
     pub embedding_model: String,
     /// Embedding vector dimensions
@@ -2186,7 +1939,7 @@ fn default_conversation_retention_days() -> u32 {
     30
 }
 fn default_embedding_model() -> String {
-    "text-embedding-3-small".into()
+    String::new()
 }
 fn default_embedding_dims() -> usize {
     1536
@@ -2554,7 +2307,7 @@ pub struct ReliabilityConfig {
     #[serde(default)]
     pub api_keys: Vec<String>,
     /// Per-model fallback chains. When a model fails, try these alternatives in order.
-    /// Example: `{ "claude-opus-4-20250514" = ["claude-sonnet-4-20250514", "gpt-4o"] }`
+    /// Example: `{ "synthetic-model-009" = ["synthetic-model-014", "synthetic-model-035"] }`
     #[serde(default)]
     pub model_fallbacks: std::collections::HashMap<String, Vec<String>>,
     /// Initial backoff for channel/daemon restarts.
@@ -2657,12 +2410,12 @@ impl Default for SchedulerConfig {
 /// [[model_routes]]
 /// hint = "reasoning"
 /// provider = "openai"
-/// model = "anthropic/claude-opus-4-20250514"
+/// model = "anthropic/synthetic-model-009"
 ///
 /// [[model_routes]]
 /// hint = "fast"
 /// provider = "groq"
-/// model = "llama-3.3-70b-versatile"
+/// model = "synthetic-model-046"
 /// ```
 ///
 /// Usage: pass `hint:reasoning` as the model parameter to route the request.
@@ -2687,7 +2440,7 @@ pub struct ModelRouteConfig {
 /// [[embedding_routes]]
 /// hint = "semantic"
 /// provider = "openai"
-/// model = "text-embedding-3-small"
+/// model = "synthetic-embedding-model"
 /// dimensions = 1536
 ///
 /// [memory]
@@ -3945,7 +3698,7 @@ impl Default for Config {
             api_key: None,
             api_url: None,
             default_provider: Some("openai".to_string()),
-            default_model: Some("gpt-5-mini".to_string()),
+            default_model: None,
             model_providers: HashMap::new(),
             default_temperature: 0.7,
             observability: ObservabilityConfig::default(),
@@ -4381,6 +4134,7 @@ impl Config {
         .await?;
 
         let config_path = gloamy_dir.join("config.toml");
+        crate::model_catalog::global().load_from_dir(&gloamy_dir)?;
 
         fs::create_dir_all(&gloamy_dir)
             .await
@@ -4774,6 +4528,30 @@ impl Config {
         }
         if self.tts.enabled && self.tts.response_format.trim().is_empty() {
             anyhow::bail!("tts.response_format must not be empty when tts.enabled = true");
+        }
+
+        if self.transcription.enabled && self.transcription.model.trim().is_empty() {
+            anyhow::bail!(
+                "transcription.model must be explicitly configured when transcription.enabled = true"
+            );
+        }
+        if self.memory.embedding_provider != "none" && self.memory.embedding_model.trim().is_empty()
+        {
+            anyhow::bail!(
+                "memory.embedding_model must be explicitly configured when embeddings are enabled"
+            );
+        }
+        for (key, price) in &self.cost.prices {
+            if key.trim().is_empty()
+                || !price.input.is_finite()
+                || !price.output.is_finite()
+                || price.input < 0.0
+                || price.output < 0.0
+            {
+                anyhow::bail!(
+                    "cost.prices entries require a nonempty key and finite nonnegative rates"
+                );
+            }
         }
 
         // Proxy (delegate to existing validation)
@@ -5303,7 +5081,7 @@ mod tests {
     async fn config_default_has_sane_values() {
         let c = Config::default();
         assert_eq!(c.default_provider.as_deref(), Some("openai"));
-        assert_eq!(c.default_model.as_deref(), Some("gpt-5-mini"));
+        assert!(c.default_model.is_none());
         assert!((c.default_temperature - 0.7).abs() < f64::EPSILON);
         assert!(c.api_key.is_none());
         assert!(!c.skills.open_skills_enabled);
@@ -5512,7 +5290,7 @@ default_temperature = 0.7
             api_key: Some("sk-test-key".into()),
             api_url: None,
             default_provider: Some("openai".into()),
-            default_model: Some("gpt-4o".into()),
+            default_model: Some("synthetic-model-035".into()),
             model_providers: HashMap::new(),
             default_temperature: 0.5,
             observability: ObservabilityConfig {
@@ -5657,71 +5435,26 @@ default_temperature = 0.7
     }
 
     #[test]
-    async fn cost_config_without_prices_keeps_default_catalog() {
-        let toml = r#"
-workspace_dir = "/tmp/ws"
-config_path = "/tmp/config.toml"
-default_temperature = 0.7
-
-[cost]
-enabled = true
-"#;
-
-        let parsed: Config = toml::from_str(toml).unwrap();
-
-        assert!(parsed.cost.enabled);
-        assert_eq!(
-            parsed
-                .cost
-                .prices
-                .get("openai/gpt-5.4-mini")
-                .map(|p| (p.input, p.output)),
-            Some((0.75, 4.5))
-        );
-        assert_eq!(
-            parsed
-                .cost
-                .prices
-                .get("anthropic/claude-sonnet-4.6")
-                .map(|p| (p.input, p.output)),
-            Some((3.0, 15.0))
-        );
+    async fn cost_config_without_prices_has_no_serialized_catalog_defaults() {
+        let parsed: CostConfig = toml::from_str("enabled = true").unwrap();
+        assert!(parsed.prices.is_empty());
+        assert!(!toml::to_string(&parsed).unwrap().contains("prices"));
     }
 
     #[test]
-    async fn cost_config_custom_prices_extend_default_catalog() {
-        let toml = r#"
-workspace_dir = "/tmp/ws"
-config_path = "/tmp/config.toml"
-default_temperature = 0.7
-
-[cost]
-enabled = true
-
-[cost.prices."openai/gpt-4o-mini"]
+    async fn cost_config_preserves_only_explicit_overrides() {
+        let raw = r#"enabled = true
+[prices."provider-a/synthetic-model"]
 input = 0.2
 output = 0.8
 "#;
-
-        let parsed: Config = toml::from_str(toml).unwrap();
-
-        assert!(parsed.cost.enabled);
-        assert_eq!(
-            parsed
-                .cost
-                .prices
-                .get("openai/gpt-4o-mini")
-                .map(|p| (p.input, p.output)),
-            Some((0.2, 0.8))
-        );
-        assert_eq!(
-            parsed
-                .cost
-                .prices
-                .get("openai/gpt-5-mini")
-                .map(|p| (p.input, p.output)),
-            Some((0.25, 2.0))
-        );
+        let parsed: CostConfig = toml::from_str(raw).unwrap();
+        assert_eq!(parsed.prices.len(), 1);
+        let price = &parsed.prices["provider-a/synthetic-model"];
+        assert_eq!((price.input, price.output), (0.2, 0.8));
+        let roundtrip: CostConfig = toml::from_str(&toml::to_string(&parsed).unwrap()).unwrap();
+        assert_eq!(roundtrip.prices.len(), 1);
+        assert_eq!(roundtrip.prices["provider-a/synthetic-model"].input, 0.2);
     }
 
     #[test]
@@ -7017,7 +6750,7 @@ default_temperature = 0.7
         let raw = r#"
 default_temperature = 0.7
 model_provider = "sub2api"
-model = "gpt-5.3-codex"
+model = "synthetic-model-039"
 
 [model_providers.sub2api]
 name = "sub2api"
@@ -7028,7 +6761,7 @@ requires_openai_auth = true
 
         let parsed: Config = toml::from_str(raw).expect("config should parse");
         assert_eq!(parsed.default_provider.as_deref(), Some("sub2api"));
-        assert_eq!(parsed.default_model.as_deref(), Some("gpt-5.3-codex"));
+        assert_eq!(parsed.default_model.as_deref(), Some("synthetic-model-039"));
         let profile = parsed
             .model_providers
             .get("sub2api")
@@ -7172,9 +6905,9 @@ requires_openai_auth = true
         let _env_guard = env_override_lock();
         let mut config = Config::default();
 
-        crate::environment::test::set_var("GLOAMY_MODEL", "gpt-4o");
+        crate::environment::test::set_var("GLOAMY_MODEL", "synthetic-model-035");
         config.apply_env_overrides();
-        assert_eq!(config.default_model.as_deref(), Some("gpt-4o"));
+        assert_eq!(config.default_model.as_deref(), Some("synthetic-model-035"));
 
         crate::environment::test::remove_var("GLOAMY_MODEL");
     }
@@ -7239,7 +6972,7 @@ requires_openai_auth = true
         let _env_guard = env_override_lock();
         let config = Config {
             default_provider: Some("ollama".to_string()),
-            default_model: Some("glm-5:cloud".to_string()),
+            default_model: Some("synthetic-model-030:cloud".to_string()),
             api_url: None,
             api_key: Some("ollama-key".to_string()),
             ..Config::default()
@@ -7256,7 +6989,7 @@ requires_openai_auth = true
         let _env_guard = env_override_lock();
         let config = Config {
             default_provider: Some("ollama".to_string()),
-            default_model: Some("glm-5:cloud".to_string()),
+            default_model: Some("synthetic-model-030:cloud".to_string()),
             api_url: Some("https://ollama.com/api".to_string()),
             api_key: None,
             ..Config::default()
@@ -7300,11 +7033,11 @@ requires_openai_auth = true
         let mut config = Config::default();
 
         crate::environment::test::remove_var("GLOAMY_MODEL");
-        crate::environment::test::set_var("MODEL", "anthropic/claude-3.5-sonnet");
+        crate::environment::test::set_var("MODEL", "anthropic/synthetic-model-006");
         config.apply_env_overrides();
         assert_eq!(
             config.default_model.as_deref(),
-            Some("anthropic/claude-3.5-sonnet")
+            Some("anthropic/synthetic-model-006")
         );
 
         crate::environment::test::remove_var("MODEL");
@@ -7437,6 +7170,22 @@ requires_openai_auth = true
         assert_eq!(resolved_workspace_dir, default_workspace_dir);
 
         let _ = fs::remove_dir_all(default_config_dir).await;
+    }
+
+    #[test]
+    async fn load_or_init_rejects_invalid_catalog_in_active_directory() {
+        let _env_guard = env_override_lock();
+        let directory = TempDir::new().unwrap();
+        let original = crate::environment::var("GLOAMY_WORKSPACE").ok();
+        crate::environment::test::set_var("GLOAMY_WORKSPACE", directory.path());
+        std::fs::write(directory.path().join("model-catalog.toml"), "invalid TOML").unwrap();
+        let error = Config::load_or_init().await.unwrap_err();
+        assert!(error.to_string().contains("model-catalog.toml"));
+        if let Some(value) = original {
+            crate::environment::test::set_var("GLOAMY_WORKSPACE", value);
+        } else {
+            crate::environment::test::remove_var("GLOAMY_WORKSPACE");
+        }
     }
 
     #[test]
@@ -8283,11 +8032,63 @@ default_model = "legacy-model"
     }
 
     #[test]
+    async fn auxiliary_models_require_explicit_ids_when_enabled() {
+        let mut config = Config::default();
+        config.transcription.enabled = true;
+        assert!(
+            config
+                .validate()
+                .unwrap_err()
+                .to_string()
+                .contains("transcription.model")
+        );
+        config.transcription.model = "synthetic-transcription-model".into();
+        config.tts.enabled = true;
+        assert!(
+            config
+                .validate()
+                .unwrap_err()
+                .to_string()
+                .contains("tts.model")
+        );
+        config.tts.model = "synthetic-speech-model".into();
+        config.memory.embedding_provider = "openai".into();
+        assert!(
+            config
+                .validate()
+                .unwrap_err()
+                .to_string()
+                .contains("memory.embedding_model")
+        );
+        config.memory.embedding_model = "synthetic-embedding-model".into();
+        config.validate().unwrap();
+    }
+
+    #[test]
+    async fn explicit_cost_rates_must_be_finite_and_nonnegative() {
+        let mut config = Config::default();
+        config.cost.prices.insert(
+            "provider/synthetic-model".into(),
+            ModelPricing {
+                input: f64::NAN,
+                output: 1.0,
+            },
+        );
+        assert!(
+            config
+                .validate()
+                .unwrap_err()
+                .to_string()
+                .contains("cost.prices")
+        );
+    }
+
+    #[test]
     async fn transcription_config_defaults() {
         let tc = TranscriptionConfig::default();
         assert!(!tc.enabled);
         assert!(tc.api_url.contains("groq.com"));
-        assert_eq!(tc.model, "whisper-large-v3-turbo");
+        assert!(tc.model.is_empty());
         assert!(tc.language.is_none());
         assert_eq!(tc.max_duration_secs, 120);
     }
@@ -8303,7 +8104,7 @@ default_model = "legacy-model"
 
         assert!(parsed.transcription.enabled);
         assert_eq!(parsed.transcription.language.as_deref(), Some("en"));
-        assert_eq!(parsed.transcription.model, "whisper-large-v3-turbo");
+        assert!(parsed.transcription.model.is_empty());
     }
 
     #[test]
@@ -8323,7 +8124,7 @@ default_model = "legacy-model"
         let tc = TtsConfig::default();
         assert!(!tc.enabled);
         assert!(tc.api_url.contains("openai.com"));
-        assert_eq!(tc.model, "tts-1");
+        assert!(tc.model.is_empty());
         assert_eq!(tc.voice, "alloy");
         assert_eq!(tc.response_format, "opus");
         assert_eq!(tc.max_input_chars, 4096);
@@ -8395,7 +8196,7 @@ default_model = "legacy-model"
         let parsed: Config = toml::from_str(
             r#"
 default_provider = "openai"
-default_model = "gpt-5-mini"
+default_model = "synthetic-model-037"
 default_temperature = 0.7
 "#,
         )
@@ -8412,7 +8213,7 @@ default_temperature = 0.7
         let parsed: Config = toml::from_str(
             r#"
 default_provider = "openai"
-default_model = "gpt-5-mini"
+default_model = "synthetic-model-037"
 default_temperature = 0.7
 
 [security.otp]

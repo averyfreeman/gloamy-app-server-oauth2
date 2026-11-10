@@ -2,7 +2,7 @@
 
 This is a high-signal reference for common config sections and defaults.
 
-Last verified: **April 5, 2026**.
+Last verified: **November 9, 2026**.
 
 Config path resolution at startup:
 
@@ -23,10 +23,44 @@ Schema export command:
 | Key | Default | Notes |
 |---|---|---|
 | `default_provider` | `openai` | provider ID or alias |
-| `default_model` | `gpt-5-mini` | model routed through selected provider |
+| `default_model` | unset | exact model ID routed through selected provider |
 | `default_temperature` | `0.7` | model temperature |
 
+When `default_model` is unset, Gloamy uses that provider's eligible recommended model from its curated catalog. If none is available, startup or a request reports that a model ID is required; discover IDs with `gloamy models refresh --provider <ID>` and `gloamy models list --provider <ID>`. Existing configured model IDs are kept as-is.
+
 For `default_provider = "codex-app-server"`, install the Codex CLI and sign in with `gloamy auth login --provider codex-app-server`. Set `default_model = "default"` to use the Codex installation's default model, or select an exact ID discovered by `gloamy models refresh --provider codex-app-server`.
+
+## Curated Model Catalog
+
+The shared catalog stores curated provider/model IDs, names, release dates, recommended defaults, explicit model aliases, optional input/output prices per million tokens, source URLs, and verification dates. Catalog loading and lookup are offline. Eligibility uses the current UTC calendar date. A model and its aliases are eligible for curated menus, recommendations, and built-in prices from its release date through the eight-calendar-month cutoff. Existing configured model IDs remain valid after they leave that window.
+
+An optional `model-catalog.toml` in the active config directory is the complete catalog. If the file exists, it replaces the bundled catalog; the bundled file is used only when the local file is absent. Schema version 1 requires a top-level `schema_version = 1` and zero or more strict `[[models]]` entries. An intentionally empty catalog uses `schema_version = 1` and `models = []`:
+
+The sample values below illustrate the schema only; the provider, model, dates, rate, and source must be replaced with verified metadata before use.
+
+```toml
+schema_version = 1
+
+[[models]]
+provider = "provider-id"
+id = "MODEL_ID_FROM_PROVIDER_DISCOVERY"
+name = "Example model"
+released = "2026-10-01"
+recommended = true
+aliases = ["VERIFIED_MODEL_ALIAS"]
+input_price_per_million = 1.0
+output_price_per_million = 2.0
+sources = ["https://vendor.example.com/models"]
+verified = "2026-11-09"
+```
+
+Each entry requires `provider`, `id`, `name`, `released`, `sources`, and `verified`. The recommendation and aliases are optional. Aliases match only within the entry's provider and inherit the entry's release date and price. Include both price fields only when a single verified rate accurately represents the model; omit rates that are unknown, tiered, or temporary. Each source must be an HTTPS URL. A provider can have at most one recommended entry, and model IDs and aliases must be unique within that provider. See the [verified source record](model-catalog-sources.md) for the bundled entries and outstanding provider research.
+
+A present but unreadable or invalid local file is an error; it never falls back silently. New CLI processes read the current file during config loading. Provider discovery commands query providers separately and update a discovery cache, not the curated catalog.
+
+`POST /api/models/catalog/reload` reloads the local catalog in a running gateway. It requires a stored paired bearer token even when pairing is disabled. See [Gateway API Reference](gateway-api-reference.md#post-apimodelscatalogreload).
+
+The daemon validates a complete replacement before publishing an immutable snapshot. A failed reload returns an error and retains the last valid snapshot; operations already using a snapshot can finish with it while later lookups see the replacement. A model with no eligible recommendation requires live discovery or an explicitly configured model ID.
 
 ## `[observability]`
 
@@ -166,7 +200,7 @@ Notes:
 ```toml
 [agents.researcher]
 provider = "openrouter"
-model = "anthropic/claude-sonnet-4-6"
+model = "anthropic/synthetic-model-016"
 system_prompt = "You are a research assistant."
 max_depth = 2
 agentic = true
@@ -175,7 +209,7 @@ max_iterations = 8
 
 [agents.coder]
 provider = "ollama"
-model = "qwen2.5-coder:32b"
+model = "synthetic-model-054"
 temperature = 0.2
 ```
 
@@ -253,7 +287,18 @@ Notes:
 Notes:
 
 - When `enabled = true`, the runtime tracks per-request cost estimates and enforces daily/monthly limits.
-- `cost.prices` is seeded with a built-in catalog for common OpenAI, Anthropic, and Gemini text models; user entries extend and override that catalog.
+- `cost.prices` contains only explicit user overrides and is not populated with resolved catalog prices when config is saved. A raw provider/model override takes precedence, followed by a provider alias's canonical provider/model override, then an exact legacy bare ID when the model ID contains no slash, then an exact provider/model ID or explicitly listed alias in the eligible catalog. Slash-containing model IDs require a provider-qualified key. Case, suffix, and unlisted alias matches are not inferred.
+- An override uses USD per million input/output tokens:
+
+```toml
+[cost.prices."provider-id/MODEL_ID_FROM_PROVIDER_DISCOVERY"]
+input = 1.0
+output = 2.0
+```
+
+- Existing explicit `[cost.prices]` values remain overrides because their original source cannot be reconstructed.
+- Unknown prices are recorded as numeric zero, which means unknown rather than free. Tokens are still counted, so cost totals and budgets are lower bounds when rates are unknown.
+- OpenAI API rates never imply rates for OpenAI Codex subscription/OAuth usage. Add an explicit override only when you have a rate that applies to that usage.
 - At `warn_at_percent` threshold, a warning is emitted but requests continue.
 - When a limit is reached, requests are rejected unless `allow_override = true` and the `--override` flag is passed.
 
@@ -411,7 +456,7 @@ allowed_roots = ["~/Desktop/projects", "/opt/shared-repo"]
 | `backend` | `sqlite` | `sqlite`, `lucid`, `markdown`, `none` |
 | `auto_save` | `true` | persist user-stated inputs only (assistant outputs are excluded) |
 | `embedding_provider` | `none` | `none`, `openai`, or custom endpoint |
-| `embedding_model` | `text-embedding-3-small` | embedding model ID, or `hint:<name>` route |
+| `embedding_model` | empty | explicit embedding model ID, or `hint:<name>` route when embeddings are enabled |
 | `embedding_dimensions` | `1536` | expected vector size for selected embedding model |
 | `vector_weight` | `0.7` | hybrid ranking vector weight |
 | `keyword_weight` | `0.3` | hybrid ranking keyword weight |
@@ -471,7 +516,7 @@ model = "provider/model-id"
 [[embedding_routes]]
 hint = "semantic"
 provider = "openai"
-model = "text-embedding-3-small"
+model = "MODEL_ID_FROM_PROVIDER_DISCOVERY"
 dimensions = 1536
 ```
 
@@ -481,6 +526,8 @@ Upgrade strategy:
 2. Update only `model = "...new-version..."` in the route entries.
 3. Validate with `gloamy doctor` before restart/rollout.
 
+When `embedding_provider` is not `none`, configure `embedding_model` explicitly. Verify the selected model ID and output dimensions with the provider or endpoint you use.
+
 Natural-language config path:
 
 - During normal agent chat, ask the assistant to rewire routes in plain language.
@@ -488,9 +535,9 @@ Natural-language config path:
 
 Example requests:
 
-- `Set conversation to provider kimi, model moonshot-v1-8k.`
-- `Set coding to provider openai, model gpt-5.3-codex, and auto-route when message contains code blocks.`
-- `Create a coder sub-agent using openai/gpt-5.3-codex with tools file_read,file_write,shell.`
+- `Set conversation to provider kimi, model synthetic-model-052`
+- `Set coding to provider openai, model synthetic-model-039, and auto-route when message contains code blocks.`
+- `Create a coder sub-agent using openai/synthetic-model-039 with tools file_read,file_write,shell.`
 
 ## `[query_classification]`
 
@@ -567,7 +614,7 @@ Inbound voice transcription is configured under `transcription`.
 |---|---|---|
 | `enabled` | `false` | Enable voice-message transcription for supported channels |
 | `api_url` | `https://api.groq.com/openai/v1/audio/transcriptions` | Whisper-compatible transcription endpoint |
-| `model` | `whisper-large-v3-turbo` | Transcription model name |
+| `model` | empty | Explicit transcription model name; required when transcription is enabled |
 | `language` | unset | Optional ISO-639-1 language hint |
 | `max_duration_secs` | `120` | Skip inbound voice messages longer than this |
 
@@ -579,7 +626,7 @@ Outbound voice synthesis is configured under `tts`.
 |---|---|---|
 | `enabled` | `false` | Enable synthesized voice replies |
 | `api_url` | `https://api.openai.com/v1/audio/speech` | OpenAI-compatible speech synthesis endpoint |
-| `model` | `tts-1` | Text-to-speech model name |
+| `model` | empty | Explicit text-to-speech model name; required when TTS is enabled |
 | `voice` | `alloy` | Voice preset sent to the TTS endpoint |
 | `response_format` | `opus` | Audio format requested from the TTS endpoint |
 | `max_input_chars` | `4096` | Truncate synthesized input to this many characters |

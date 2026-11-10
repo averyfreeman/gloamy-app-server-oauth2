@@ -549,7 +549,9 @@ mod tests {
     #[tokio::test]
     async fn chat_fails_without_key() {
         let p = OpenAiProvider::new(None);
-        let result = p.chat_with_system(None, "hello", "gpt-4o", 0.7).await;
+        let result = p
+            .chat_with_system(None, "hello", "synthetic-model-035", 0.7)
+            .await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("API key not set"));
     }
@@ -558,7 +560,7 @@ mod tests {
     async fn chat_with_system_fails_without_key() {
         let p = OpenAiProvider::new(None);
         let result = p
-            .chat_with_system(Some("You are Gloamy"), "test", "gpt-4o", 0.5)
+            .chat_with_system(Some("You are Gloamy"), "test", "synthetic-model-035", 0.5)
             .await;
         assert!(result.is_err());
     }
@@ -566,7 +568,7 @@ mod tests {
     #[test]
     fn request_serializes_with_system_message() {
         let req = ChatRequest {
-            model: "gpt-4o".to_string(),
+            model: "synthetic-model-035".to_string(),
             messages: vec![
                 Message {
                     role: "system".to_string(),
@@ -582,13 +584,13 @@ mod tests {
         let json = serde_json::to_string(&req).unwrap();
         assert!(json.contains("\"role\":\"system\""));
         assert!(json.contains("\"role\":\"user\""));
-        assert!(json.contains("gpt-4o"));
+        assert!(json.contains("synthetic-model-035"));
     }
 
     #[test]
     fn request_serializes_without_system() {
         let req = ChatRequest {
-            model: "gpt-4o".to_string(),
+            model: "synthetic-model-035".to_string(),
             messages: vec![Message {
                 role: "user".to_string(),
                 content: "hello".to_string(),
@@ -615,14 +617,14 @@ mod tests {
     }
 
     #[test]
-    fn gpt4o_keeps_temperature() {
+    fn ordinary_model_keeps_temperature() {
         let req = ChatRequest {
-            model: "gpt-4o".to_string(),
+            model: "synthetic-model-035".to_string(),
             messages: vec![Message {
                 role: "user".to_string(),
                 content: "hello".to_string(),
             }],
-            temperature: OpenAiProvider::request_temperature("gpt-4o", 0.7),
+            temperature: OpenAiProvider::request_temperature("synthetic-model-035", 0.7),
         };
         let json = serde_json::to_string(&req).unwrap();
         assert!(json.contains("\"temperature\":0.7"));
@@ -741,7 +743,9 @@ mod tests {
                 }
             }
         })];
-        let result = p.chat_with_tools(&messages, &tools, "gpt-4o", 0.7).await;
+        let result = p
+            .chat_with_tools(&messages, &tools, "synthetic-model-035", 0.7)
+            .await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("API key not set"));
     }
@@ -764,12 +768,16 @@ mod tests {
             }
         })];
 
-        let result = p.chat_with_tools(&messages, &tools, "gpt-4o", 0.7).await;
+        let result = p
+            .chat_with_tools(&messages, &tools, "synthetic-model-035", 0.7)
+            .await;
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Invalid OpenAI tool specification"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Invalid OpenAI tool specification")
+        );
     }
 
     #[test]

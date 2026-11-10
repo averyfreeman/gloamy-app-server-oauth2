@@ -6,7 +6,7 @@ use crate::grounding::GroundedRuntimePerceptionProvider;
 use crate::memory::episode::EpisodeManager;
 use crate::memory::{self, Memory, MemoryCategory};
 use crate::multimodal;
-use crate::observability::{self, runtime_trace, Observer, ObserverEvent};
+use crate::observability::{self, Observer, ObserverEvent, runtime_trace};
 use crate::providers::{
     self, ChatMessage, ChatRequest, Provider, ProviderCapabilityError, ToolCall,
 };
@@ -351,9 +351,9 @@ fn recovery_hint_for_failure(classification: &str, tool_name: &str) -> String {
             Take a screenshot or inspect native app state, then adjust the action or expectations. \
             For mac_automation on native apps, prefer inspect_window_elements plus pre_observe:auto and a concrete expect condition instead of retrying blind."
         ),
-        _ => format!(
-            "{tool_name}: gather more context, narrow the step, or switch to another tool"
-        ),
+        _ => {
+            format!("{tool_name}: gather more context, narrow the step, or switch to another tool")
+        }
     }
 }
 
@@ -1852,11 +1852,7 @@ fn parse_xml_tool_calls(xml_content: &str) -> Option<Vec<ParsedToolCall>> {
         });
     }
 
-    if calls.is_empty() {
-        None
-    } else {
-        Some(calls)
-    }
+    if calls.is_empty() { None } else { Some(calls) }
 }
 
 /// Parse MiniMax-style XML tool calls with attributed invoke/parameter tags.
@@ -2427,7 +2423,7 @@ fn default_param_for_tool(tool: &str) -> &'static str {
 
 /// Parse GLM-style shortened tool call bodies found inside `<tool_call>` tags.
 ///
-/// Handles three sub-formats that GLM-4.7 emits:
+/// Handles three provider-emitted sub-formats:
 ///
 /// 1. **Shortened**: `tool_name>value` — single value mapped via
 ///    [`default_param_for_tool`].
@@ -4877,10 +4873,13 @@ pub async fn run(
         .or(config.default_provider.as_deref())
         .unwrap_or("openai");
 
-    let model_name = model_override
-        .as_deref()
-        .or(config.default_model.as_deref())
-        .unwrap_or("anthropic/claude-sonnet-4");
+    let resolved_model = crate::model_catalog::require_model(
+        crate::providers::canonical_provider_name(provider_name),
+        model_override
+            .as_deref()
+            .or(config.default_model.as_deref()),
+    )?;
+    let model_name = resolved_model.as_str();
 
     let provider_runtime_options = providers::ProviderRuntimeOptions {
         auth_profile_override: None,
@@ -4985,7 +4984,7 @@ pub async fn run(
     ));
     tool_descs.push((
         "model_routing_config",
-        "Configure default model, scenario routing, and delegate agents. Use for natural-language requests like: 'set conversation to kimi and coding to gpt-5.3-codex'.",
+        "Configure default model, scenario routing, and delegate agents. Use for natural-language requests like: 'set conversation to kimi and coding to synthetic-model-039'.",
     ));
     if !config.agents.is_empty() {
         tool_descs.push((
@@ -5331,10 +5330,10 @@ pub async fn process_message(config: Config, message: &str) -> Result<String> {
         &config,
     );
     let provider_name = config.default_provider.as_deref().unwrap_or("openai");
-    let model_name = config
-        .default_model
-        .clone()
-        .unwrap_or_else(|| "anthropic/claude-sonnet-4-20250514".into());
+    let model_name = crate::model_catalog::require_model(
+        crate::providers::canonical_provider_name(provider_name),
+        config.default_model.as_deref(),
+    )?;
     let provider_runtime_options = providers::ProviderRuntimeOptions {
         auth_profile_override: None,
         provider_api_url: config.api_url.clone(),
@@ -5449,7 +5448,7 @@ pub async fn process_message(config: Config, message: &str) -> Result<String> {
 mod tests {
     use super::*;
     use async_trait::async_trait;
-    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
     use std::collections::VecDeque;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
@@ -5683,8 +5682,8 @@ mod tests {
 
     use crate::memory::{Memory, MemoryCategory, SqliteMemory};
     use crate::observability::NoopObserver;
-    use crate::providers::traits::ProviderCapabilities;
     use crate::providers::ChatResponse;
+    use crate::providers::traits::ProviderCapabilities;
     use tempfile::TempDir;
 
     struct NonVisionProvider {
@@ -6678,9 +6677,11 @@ mod tests {
             .iter()
             .find(|msg| msg.role == "user" && msg.content.starts_with("[Tool results]"))
             .expect("tool results should be present");
-        assert!(tool_results
-            .content
-            .contains("Blocked by runtime policy: call perception_capture"));
+        assert!(
+            tool_results
+                .content
+                .contains("Blocked by runtime policy: call perception_capture")
+        );
     }
 
     #[tokio::test]
@@ -7460,7 +7461,7 @@ Tail"#;
         assert_eq!(history[0].content, "system prompt");
         // Trimmed to limit
         assert_eq!(history.len(), DEFAULT_MAX_HISTORY_MESSAGES + 1); // +1 for system
-                                                                     // Most recent messages preserved
+        // Most recent messages preserved
         let last = &history[history.len() - 1];
         assert_eq!(
             last.content,
@@ -7844,10 +7845,12 @@ Done."#;
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].0, "shell");
         assert!(calls[0].1["command"].as_str().unwrap().contains("curl"));
-        assert!(calls[0].1["command"]
-            .as_str()
-            .unwrap()
-            .contains("example.com"));
+        assert!(
+            calls[0].1["command"]
+                .as_str()
+                .unwrap()
+                .contains("example.com")
+        );
     }
 
     #[test]

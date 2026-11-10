@@ -272,15 +272,19 @@ mod tests {
         assert!(schema["properties"]["path"].is_object());
         assert!(schema["properties"]["offset"].is_object());
         assert!(schema["properties"]["limit"].is_object());
-        assert!(schema["required"]
-            .as_array()
-            .unwrap()
-            .contains(&json!("path")));
+        assert!(
+            schema["required"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("path"))
+        );
         // offset and limit are optional
-        assert!(!schema["required"]
-            .as_array()
-            .unwrap()
-            .contains(&json!("offset")));
+        assert!(
+            !schema["required"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("offset"))
+        );
     }
 
     #[tokio::test]
@@ -358,11 +362,13 @@ mod tests {
         let result = tool.execute(json!({"path": "test.txt"})).await.unwrap();
 
         assert!(!result.success);
-        assert!(result
-            .error
-            .as_deref()
-            .unwrap_or("")
-            .contains("Rate limit exceeded"));
+        assert!(
+            result
+                .error
+                .as_deref()
+                .unwrap_or("")
+                .contains("Rate limit exceeded")
+        );
 
         let _ = tokio::fs::remove_dir_all(&dir).await;
     }
@@ -452,11 +458,13 @@ mod tests {
         let result = tool.execute(json!({"path": "escape.txt"})).await.unwrap();
 
         assert!(!result.success);
-        assert!(result
-            .error
-            .as_deref()
-            .unwrap_or("")
-            .contains("escapes workspace"));
+        assert!(
+            result
+                .error
+                .as_deref()
+                .unwrap_or("")
+                .contains("escapes workspace")
+        );
 
         let _ = tokio::fs::remove_dir_all(&root).await;
     }
@@ -597,9 +605,11 @@ mod tests {
             .await
             .unwrap();
         assert!(result.success);
-        assert!(result
-            .output
-            .contains("[No lines in range, file has 2 lines]"));
+        assert!(
+            result
+                .output
+                .contains("[No lines in range, file has 2 lines]")
+        );
 
         let _ = tokio::fs::remove_dir_all(&dir).await;
     }
@@ -815,6 +825,7 @@ mod tests {
         ]);
 
         let mut agent = Agent::builder()
+            .model_name("synthetic-model".into())
             .provider(Box::new(provider) as Box<dyn Provider>)
             .tools(vec![file_read_tool])
             .memory(make_memory())
@@ -907,6 +918,7 @@ mod tests {
         ]);
 
         let mut agent = Agent::builder()
+            .model_name("synthetic-model".into())
             .provider(Box::new(provider) as Box<dyn Provider>)
             .tools(vec![file_read_tool])
             .memory(make_memory())
@@ -990,13 +1002,14 @@ mod tests {
             .expect("provider should initialize");
 
         let mut agent = Agent::builder()
+            .model_name("synthetic-model".into())
             .provider(Box::new(provider) as Box<dyn Provider>)
             .tools(vec![file_read_tool])
             .memory(make_memory())
             .observer(make_observer())
             .tool_dispatcher(Box::new(XmlToolDispatcher))
             .workspace_dir(workspace.clone())
-            .model_name("gpt-5.3-codex".to_string())
+            .model_name("synthetic-model-039".to_string())
             .build()
             .unwrap();
 

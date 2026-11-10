@@ -68,7 +68,7 @@ Next steps (official WebArena flow):
      --instruction_path agent/prompts/jsons/p_cot_id_actree_2s.json \
      --test_start_idx 0 \
      --test_end_idx 2 \
-     --model gpt-4o \
+     --model synthetic-model-035 \
      --result_dir results/smoke
 
 Notes:

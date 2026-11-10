@@ -33,7 +33,7 @@ Edit `~/.gloamy/config.toml`:
 ```toml
 api_key = "your-api-key"
 default_provider = "anthropic-custom:https://api.example.com"
-default_model = "claude-sonnet-4-6"
+default_model = "MODEL_ID_FROM_PROVIDER_DISCOVERY"
 ```
 
 ### Environment Variables
@@ -54,10 +54,10 @@ Gloamy includes a first-class local provider for `llama-server`:
 - Default endpoint: `http://localhost:8080/v1`
 - API key is optional unless `llama-server` is started with `--api-key`
 
-Start a local server (example):
+Start a local server with a model file or repository available on the host:
 
 ```bash
-llama-server -hf ggml-org/gpt-oss-20b-GGUF --jinja -c 133000 --host 127.0.0.1 --port 8033
+llama-server -m /path/to/model.gguf --host 127.0.0.1 --port 8033
 ```
 
 Then configure Gloamy:
@@ -65,7 +65,7 @@ Then configure Gloamy:
 ```toml
 default_provider = "llamacpp"
 api_url = "http://127.0.0.1:8033/v1"
-default_model = "ggml-org/gpt-oss-20b-GGUF"
+default_model = "MODEL_ID_REPORTED_BY_SERVER"
 default_temperature = 0.7
 ```
 
@@ -78,6 +78,8 @@ gloamy agent -m "hello"
 
 You do not need to export `GLOAMY_API_KEY=dummy` for this flow.
 
+Replace the model path with a file you have installed. Query the local endpoint's `/v1/models` response and set `default_model` to its exact ID; model discovery does not add entries to the curated catalog.
+
 ## SGLang Server
 
 Gloamy includes a first-class local provider for [SGLang](https://github.com/sgl-project/sglang):
@@ -89,14 +91,14 @@ Gloamy includes a first-class local provider for [SGLang](https://github.com/sgl
 Start a local server (example):
 
 ```bash
-python -m sglang.launch_server --model meta-llama/Llama-3.1-8B-Instruct --port 30000
+python -m sglang.launch_server --model-path /path/to/model-directory --port 30000
 ```
 
 Then configure Gloamy:
 
 ```toml
 default_provider = "sglang"
-default_model = "meta-llama/Llama-3.1-8B-Instruct"
+default_model = "MODEL_ID_REPORTED_BY_SERVER"
 default_temperature = 0.7
 ```
 
@@ -109,6 +111,8 @@ gloamy agent -m "hello"
 
 You do not need to export `GLOAMY_API_KEY=dummy` for this flow.
 
+Use the exact model ID returned by the configured SGLang endpoint. Replace the example model path with a model directory installed on the host.
+
 ## vLLM Server
 
 Gloamy includes a first-class local provider for [vLLM](https://docs.vllm.ai/):
@@ -120,16 +124,18 @@ Gloamy includes a first-class local provider for [vLLM](https://docs.vllm.ai/):
 Start a local server (example):
 
 ```bash
-vllm serve meta-llama/Llama-3.1-8B-Instruct
+vllm serve /path/to/model-directory
 ```
 
 Then configure Gloamy:
 
 ```toml
 default_provider = "vllm"
-default_model = "meta-llama/Llama-3.1-8B-Instruct"
+default_model = "MODEL_ID_REPORTED_BY_SERVER"
 default_temperature = 0.7
 ```
+
+Use the exact ID exposed by the local vLLM `/v1/models` endpoint.
 
 Quick validation:
 
@@ -202,5 +208,5 @@ api_key = "internal-token"
 ```toml
 default_provider = "custom:https://gateway.cloud-provider.com/v1"
 api_key = "gateway-api-key"
-default_model = "gpt-4"
+default_model = "MODEL_ID_FROM_PROVIDER_DISCOVERY"
 ```

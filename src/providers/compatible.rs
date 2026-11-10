@@ -9,10 +9,10 @@ use crate::providers::traits::{
     ToolCall as ProviderToolCall,
 };
 use async_trait::async_trait;
-use futures_util::{stream, StreamExt};
+use futures_util::{StreamExt, stream};
 use reqwest::{
-    header::{HeaderMap, HeaderValue, USER_AGENT},
     Client,
+    header::{HeaderMap, HeaderValue, USER_AGENT},
 };
 use serde::{Deserialize, Serialize};
 
@@ -392,7 +392,7 @@ fn strip_think_tags(s: &str) -> String {
 struct ResponseMessage {
     #[serde(default)]
     content: Option<String>,
-    /// Reasoning/thinking models (e.g. Qwen3, GLM-4) may return their output
+    /// Reasoning/thinking models may return their output
     /// in `reasoning_content` instead of `content`. Used as automatic fallback.
     #[serde(default)]
     reasoning_content: Option<String>,
@@ -402,7 +402,7 @@ struct ResponseMessage {
 
 impl ResponseMessage {
     /// Extract text content, falling back to `reasoning_content` when `content`
-    /// is missing or empty. Reasoning/thinking models (Qwen3, GLM-4, etc.)
+    /// is missing or empty. Reasoning/thinking models
     /// often return their output solely in `reasoning_content`.
     /// Strips `<think>...</think>` blocks that some models (e.g. MiniMax) embed
     /// inline in `content` instead of using a separate field.
@@ -1737,19 +1737,21 @@ mod tests {
     async fn chat_fails_without_key() {
         let p = make_provider("Venice", "https://api.venice.ai", None);
         let result = p
-            .chat_with_system(None, "hello", "llama-3.3-70b", 0.7)
+            .chat_with_system(None, "hello", "synthetic-model-044", 0.7)
             .await;
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Venice API key not set"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Venice API key not set")
+        );
     }
 
     #[test]
     fn request_serializes_correctly() {
         let req = ApiChatRequest {
-            model: "llama-3.3-70b".to_string(),
+            model: "synthetic-model-044".to_string(),
             messages: vec![
                 Message {
                     role: "system".to_string(),
@@ -1766,7 +1768,7 @@ mod tests {
             tool_choice: None,
         };
         let json = serde_json::to_string(&req).unwrap();
-        assert!(json.contains("llama-3.3-70b"));
+        assert!(json.contains("synthetic-model-044"));
         assert!(json.contains("system"));
         assert!(json.contains("user"));
         // tools/tool_choice should be omitted when None
@@ -1924,9 +1926,10 @@ mod tests {
             .await
             .expect_err("system-only fallback payload should fail");
 
-        assert!(err
-            .to_string()
-            .contains("requires at least one non-system message"));
+        assert!(
+            err.to_string()
+                .contains("requires at least one non-system message")
+        );
     }
 
     #[test]
@@ -2580,10 +2583,12 @@ mod tests {
 
         let result = p.chat_with_tools(&messages, &tools, "model", 0.7).await;
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("TestProvider API key not set"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("TestProvider API key not set")
+        );
     }
 
     #[test]
@@ -2651,7 +2656,7 @@ mod tests {
 
     #[test]
     fn reasoning_content_fallback_when_content_empty() {
-        // Reasoning models (Qwen3, GLM-4) return content: "" with reasoning_content populated
+        // Reasoning models return content: "" with reasoning_content populated
         let json = r#"{"choices":[{"message":{"content":"","reasoning_content":"Thinking output here"}}]}"#;
         let resp: ApiChatResponse = serde_json::from_str(json).unwrap();
         let msg = &resp.choices[0].message;

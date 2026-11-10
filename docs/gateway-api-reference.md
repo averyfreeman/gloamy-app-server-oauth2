@@ -2,7 +2,7 @@
 
 HTTP API endpoints exposed by the Gloamy gateway server.
 
-Last verified: **April 8, 2026**.
+Last verified: **November 9, 2026**.
 
 ## Base URL
 
@@ -21,6 +21,8 @@ All endpoints require authentication via one of:
 2. **API key** (for trusted clients):
    - Header: `X-API-Key: <api_key>`
 
+`POST /api/models/catalog/reload` is an exception: it requires a valid stored paired bearer token, even when `gateway.require_pairing = false`. `X-API-Key` does not authorize this route.
+
 ## API Endpoints
 
 ### Status & Health
@@ -35,7 +37,7 @@ Runtime status summary including provider, model, version info.
 {
   "version": "0.1.0",
   "provider": "openai",
-  "model": "gpt-5-mini",
+  "model": "synthetic-model-037",
   "uptime_secs": 3600
 }
 ```
@@ -57,6 +59,37 @@ Component health snapshot for monitoring.
     "channels": "healthy"
   }
 }
+```
+
+---
+
+### Model Catalog
+
+#### `POST /api/models/catalog/reload`
+
+Reload `model-catalog.toml` from the active config directory in the running gateway. The catalog is local and this route does not fetch model metadata from providers.
+
+**Authentication:** Send a valid stored paired bearer token, whether or not pairing is enabled:
+
+```http
+Authorization: Bearer <PAIRED_BEARER_TOKEN>
+```
+
+**Success (`200`):**
+
+```json
+{"reloaded": true}
+```
+
+**Errors:** `401` means the bearer token is missing or invalid. `400` means the local catalog could not be loaded or validated; the response is intentionally generic and the last valid in-memory catalog remains active. Daemon logs record the rejection without including file contents; run `gloamy models list` locally to see the loading error.
+
+The request reads the complete `model-catalog.toml` in the active config directory. If that file is absent, reload selects the bundled catalog. This endpoint does not fetch models or pricing from the network. Validation finishes before publication: operations holding the prior immutable snapshot can finish, and later operations use the newly published snapshot. A `400` leaves the last valid snapshot active.
+
+Example:
+
+```bash
+curl -X POST http://127.0.0.1:42617/api/models/catalog/reload \
+  -H "Authorization: Bearer $GLOAMY_PAIRED_TOKEN"
 ```
 
 ---
@@ -222,8 +255,8 @@ Current cost tracking summary.
   "total_tokens": 1500000,
   "request_count": 250,
   "by_model": {
-    "gpt-5-mini": { "requests": 200, "cost_usd": 1.50 },
-    "claude-sonnet-4": { "requests": 50, "cost_usd": 0.95 }
+    "synthetic-model-037": { "requests": 200, "cost_usd": 1.50 },
+    "synthetic-model-013": { "requests": 50, "cost_usd": 0.95 }
   }
 }
 ```

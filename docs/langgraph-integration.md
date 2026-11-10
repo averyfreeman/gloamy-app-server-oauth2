@@ -4,7 +4,7 @@ This guide explains how to use the `gloamy-tools` Python package for consistent 
 
 ## Background
 
-Some LLM providers, particularly Chinese models like GLM-5 (Zhipu AI), have inconsistent tool calling behavior when using text-based tool invocation. Gloamy's Rust core uses structured tool calling via the OpenAI API format, but some models respond better to a different approach.
+Some LLM providers, including those served through OpenAI-compatible endpoints, have inconsistent tool calling behavior when using text-based tool invocation. Gloamy's Rust core uses structured tool calling via the OpenAI API format, but some models respond better to a different approach.
 
 LangGraph provides a stateful graph execution engine that guarantees consistent tool calling behavior regardless of the underlying model's native capabilities.
 
@@ -57,7 +57,7 @@ from langchain_core.messages import HumanMessage
 async def main():
     agent = create_agent(
         tools=[shell, file_read, file_write],
-        model="glm-5",
+        model="synthetic-model-030",
         api_key="your-api-key",
         base_url="https://api.z.ai/api/coding/paas/v4"
     )
@@ -111,18 +111,18 @@ def query_database(sql: str) -> str:
 
 agent = create_agent(
     tools=[get_weather, query_database],
-    model="glm-5",
+    model="synthetic-model-030",
     api_key="your-key"
 )
 ```
 
 ## Provider Configuration
 
-### Z.AI / GLM-5
+### Z.AI / Zhipu
 
 ```python
 agent = create_agent(
-    model="glm-5",
+    model="synthetic-model-030",
     api_key="your-zhipu-key",
     base_url="https://api.z.ai/api/coding/paas/v4"
 )
@@ -132,7 +132,7 @@ agent = create_agent(
 
 ```python
 agent = create_agent(
-    model="anthropic/claude-sonnet-4-6",
+    model="anthropic/synthetic-model-016",
     api_key="your-openrouter-key",
     base_url="https://openrouter.ai/api/v1"
 )
@@ -142,7 +142,7 @@ agent = create_agent(
 
 ```python
 agent = create_agent(
-    model="llama-3.3-70b-versatile",
+    model="synthetic-model-046",
     api_key="your-groq-key",
     base_url="https://api.groq.com/openai/v1"
 )
@@ -152,7 +152,7 @@ agent = create_agent(
 
 ```python
 agent = create_agent(
-    model="llama3.2",
+    model="synthetic-model-050",
     base_url="http://localhost:11434/v1"
 )
 ```
@@ -168,7 +168,7 @@ bot = DiscordBot(
     guild_id=123456789,  # Your Discord server ID
     allowed_users=["123456789"],  # User IDs that can use the bot
     api_key=os.environ["API_KEY"],
-    model="glm-5"
+    model="synthetic-model-030"
 )
 
 bot.run()

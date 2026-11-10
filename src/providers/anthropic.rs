@@ -579,7 +579,7 @@ impl Provider for AnthropicProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::auth::anthropic_token::{detect_auth_kind, AnthropicAuthKind};
+    use crate::auth::anthropic_token::{AnthropicAuthKind, detect_auth_kind};
 
     #[test]
     fn creates_with_key() {
@@ -635,7 +635,7 @@ mod tests {
     async fn chat_fails_without_key() {
         let p = AnthropicProvider::new(None);
         let result = p
-            .chat_with_system(None, "hello", "claude-3-opus", 0.7)
+            .chat_with_system(None, "hello", "synthetic-model-004", 0.7)
             .await;
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
@@ -709,7 +709,7 @@ mod tests {
     async fn chat_with_system_fails_without_key() {
         let p = AnthropicProvider::new(None);
         let result = p
-            .chat_with_system(Some("You are Gloamy"), "hello", "claude-3-opus", 0.7)
+            .chat_with_system(Some("You are Gloamy"), "hello", "synthetic-model-004", 0.7)
             .await;
         assert!(result.is_err());
     }
@@ -717,7 +717,7 @@ mod tests {
     #[test]
     fn chat_request_serializes_without_system() {
         let req = ChatRequest {
-            model: "claude-3-opus".to_string(),
+            model: "synthetic-model-004".to_string(),
             max_tokens: 4096,
             system: None,
             messages: vec![Message {
@@ -731,14 +731,14 @@ mod tests {
             !json.contains("system"),
             "system field should be skipped when None"
         );
-        assert!(json.contains("claude-3-opus"));
+        assert!(json.contains("synthetic-model-004"));
         assert!(json.contains("hello"));
     }
 
     #[test]
     fn chat_request_serializes_with_system() {
         let req = ChatRequest {
-            model: "claude-3-opus".to_string(),
+            model: "synthetic-model-004".to_string(),
             max_tokens: 4096,
             system: Some("You are Gloamy".to_string()),
             messages: vec![Message {
@@ -781,7 +781,7 @@ mod tests {
     fn temperature_range_serializes() {
         for temp in [0.0, 0.5, 1.0, 2.0] {
             let req = ChatRequest {
-                model: "claude-3-opus".to_string(),
+                model: "synthetic-model-004".to_string(),
                 max_tokens: 4096,
                 system: None,
                 messages: vec![],
@@ -1144,7 +1144,7 @@ mod tests {
     fn backward_compatibility_native_chat_request() {
         // Test that requests without cache_control serialize identically to old format
         let req = NativeChatRequest {
-            model: "claude-3-opus".to_string(),
+            model: "synthetic-model-004".to_string(),
             max_tokens: 4096,
             system: Some(SystemPrompt::String("System".to_string())),
             messages: vec![NativeMessage {
@@ -1207,7 +1207,7 @@ mod tests {
     /// ALL conversation turns and native tool definitions.
     #[tokio::test]
     async fn chat_with_tools_sends_full_history_and_native_tools() {
-        use axum::{routing::post, Json, Router};
+        use axum::{Json, Router, routing::post};
         use std::sync::{Arc, Mutex};
         use tokio::net::TcpListener;
 
@@ -1227,7 +1227,7 @@ mod tests {
                         "type": "message",
                         "role": "assistant",
                         "content": [{"type": "text", "text": "The make function creates a map."}],
-                        "model": "claude-opus-4-6",
+                        "model": "synthetic-model-010",
                         "stop_reason": "end_turn",
                         "usage": {"input_tokens": 100, "output_tokens": 20}
                     }))
@@ -1258,7 +1258,9 @@ mod tests {
         let messages = vec![
             ChatMessage::system("You are a helpful intern."),
             ChatMessage::user("gen a 2 sum in golang"),
-            ChatMessage::assistant("```go\nfunc twoSum(nums []int, target int) []int {\n    m := make(map[int]int)\n    for i, n := range nums {\n        if j, ok := m[target-n]; ok {\n            return []int{j, i}\n        }\n        m[n] = i\n    }\n    return nil\n}\n```"),
+            ChatMessage::assistant(
+                "```go\nfunc twoSum(nums []int, target int) []int {\n    m := make(map[int]int)\n    for i, n := range nums {\n        if j, ok := m[target-n]; ok {\n            return []int{j, i}\n        }\n        m[n] = i\n    }\n    return nil\n}\n```",
+            ),
             ChatMessage::user("what's meaning of make here?"),
         ];
 
@@ -1278,7 +1280,7 @@ mod tests {
         })];
 
         let result = provider
-            .chat_with_tools(&messages, &tools, "claude-opus-4-6", 0.7)
+            .chat_with_tools(&messages, &tools, "synthetic-model-010", 0.7)
             .await;
         assert!(result.is_ok(), "chat_with_tools failed: {:?}", result.err());
 

@@ -4,7 +4,7 @@ Python companion package for [Gloamy](https://github.com/iBz-04/gloamy) — Lang
 
 ## Why This Package?
 
-Some LLM providers (particularly GLM-5/Zhipu and similar models) have inconsistent tool calling behavior when using text-based tool invocation. This package provides a LangGraph-based approach that delivers:
+Some LLM providers (particularly Zhipu and similar models) have inconsistent tool calling behavior when using text-based tool invocation. This package provides a LangGraph-based approach that delivers:
 
 - **Consistent tool calling** across all OpenAI-compatible providers
 - **Automatic tool loop** — keeps calling tools until the task is complete
@@ -36,7 +36,7 @@ async def main():
     # Create agent with tools
     agent = create_agent(
         tools=[shell, file_read, file_write],
-        model="glm-5",
+        model="synthetic-model-030",
         api_key="your-api-key",
         base_url="https://api.z.ai/api/coding/paas/v4"
     )
@@ -111,7 +111,7 @@ agent = create_agent(tools=[my_custom_tool])
 
 Works with any OpenAI-compatible provider:
 
-- **Z.AI / GLM-5** — `https://api.z.ai/api/coding/paas/v4`
+- **Z.AI / Zhipu** — `https://api.z.ai/api/coding/paas/v4`
 - **OpenRouter** — `https://openrouter.ai/api/v1`
 - **Groq** — `https://api.groq.com/openai/v1`
 - **DeepSeek** — `https://api.deepseek.com`
@@ -152,3 +152,5 @@ Use **Rust Gloamy** for production edge deployments. Use **gloamy-tools** when y
 ## License
 
 MIT License — see [LICENSE](../LICENSE)
+
+Model IDs in examples are placeholders. Pass an explicit provider model ID or set `GLOAMY_MODEL`; the Python wrapper does not choose a built-in model.

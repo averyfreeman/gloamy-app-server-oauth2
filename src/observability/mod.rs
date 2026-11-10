@@ -22,8 +22,8 @@ pub use traits::{Observer, ObserverEvent};
 #[allow(unused_imports)]
 pub use verbose::VerboseObserver;
 
-use crate::config::schema::CostConfig;
 use crate::config::ObservabilityConfig;
+use crate::config::schema::CostConfig;
 use crate::cost::CostTracker;
 use std::path::Path;
 use std::sync::Arc;
@@ -234,7 +234,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let mut prices = HashMap::new();
         prices.insert(
-            "openai/gpt-4".to_string(),
+            "openai/synthetic-model-032".to_string(),
             ModelPricing {
                 input: 1.0,
                 output: 2.0,
@@ -252,7 +252,7 @@ mod tests {
 
         observer.record_event(&ObserverEvent::LlmResponse {
             provider: "openai".into(),
-            model: "gpt-4".into(),
+            model: "synthetic-model-032".into(),
             duration: Duration::from_millis(100),
             success: true,
             error_message: None,

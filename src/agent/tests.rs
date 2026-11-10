@@ -280,6 +280,7 @@ fn build_agent_with(
     dispatcher: Box<dyn ToolDispatcher>,
 ) -> Agent {
     Agent::builder()
+        .model_name("synthetic-model".into())
         .provider(provider)
         .tools(tools)
         .memory(make_memory())
@@ -297,6 +298,7 @@ fn build_agent_with_memory(
     auto_save: bool,
 ) -> Agent {
     Agent::builder()
+        .model_name("synthetic-model".into())
         .provider(provider)
         .tools(tools)
         .memory(mem)
@@ -314,6 +316,7 @@ fn build_agent_with_config(
     config: AgentConfig,
 ) -> Agent {
     Agent::builder()
+        .model_name("synthetic-model".into())
         .provider(provider)
         .tools(tools)
         .memory(make_memory())
@@ -958,6 +961,7 @@ async fn history_contains_all_expected_entries_after_tool_loop() {
 #[tokio::test]
 async fn builder_fails_without_provider() {
     let result = Agent::builder()
+        .model_name("synthetic-model".into())
         .tools(vec![])
         .memory(make_memory())
         .observer(make_observer())

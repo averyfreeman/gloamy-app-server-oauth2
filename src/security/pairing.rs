@@ -200,9 +200,15 @@ impl PairingGuard {
         if !self.require_pairing {
             return true;
         }
-        let hashed = hash_token(token);
-        let tokens = self.paired_tokens.lock();
-        tokens.contains(&hashed)
+        self.is_valid_bearer_token(token)
+    }
+
+    /// Validate a stored bearer token even when pairing enforcement is disabled.
+    pub fn is_valid_bearer_token(&self, token: &str) -> bool {
+        if token.is_empty() {
+            return false;
+        }
+        self.paired_tokens.lock().contains(&hash_token(token))
     }
 
     /// Returns true if the gateway is already paired (has at least one token).

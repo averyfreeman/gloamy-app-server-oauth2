@@ -1,5 +1,5 @@
-use super::traits::{ChatMessage, ChatRequest, ChatResponse};
 use super::Provider;
+use super::traits::{ChatMessage, ChatRequest, ChatResponse};
 use async_trait::async_trait;
 use std::collections::HashMap;
 
@@ -14,7 +14,7 @@ pub struct Route {
 /// based on a task hint encoded in the model parameter.
 ///
 /// The model parameter can be:
-/// - A regular model name (e.g. "anthropic/claude-sonnet-4") → uses default provider
+/// - A regular model name (e.g. "anthropic/synthetic-model-013") → uses default provider
 /// - A hint-prefixed string (e.g. "hint:reasoning") → resolves via route table
 ///
 /// This wraps multiple pre-created providers and selects the right one per request.
@@ -178,8 +178,8 @@ impl Provider for RouterProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     struct MockProvider {
         calls: Arc<AtomicUsize>,
@@ -279,8 +279,8 @@ mod tests {
         let (router, mocks) = make_router(
             vec![("fast", "fast-response"), ("smart", "smart-response")],
             vec![
-                ("fast", "fast", "llama-3-70b"),
-                ("reasoning", "smart", "claude-opus"),
+                ("fast", "fast", "synthetic-model-042"),
+                ("reasoning", "smart", "synthetic-model-008"),
             ],
         );
 
@@ -290,7 +290,7 @@ mod tests {
             .unwrap();
         assert_eq!(result, "smart-response");
         assert_eq!(mocks[1].call_count(), 1);
-        assert_eq!(mocks[1].last_model(), "claude-opus");
+        assert_eq!(mocks[1].last_model(), "synthetic-model-008");
         assert_eq!(mocks[0].call_count(), 0);
     }
 
@@ -298,13 +298,13 @@ mod tests {
     async fn routes_fast_hint() {
         let (router, mocks) = make_router(
             vec![("fast", "fast-response"), ("smart", "smart-response")],
-            vec![("fast", "fast", "llama-3-70b")],
+            vec![("fast", "fast", "synthetic-model-042")],
         );
 
         let result = router.simple_chat("hello", "hint:fast", 0.5).await.unwrap();
         assert_eq!(result, "fast-response");
         assert_eq!(mocks[0].call_count(), 1);
-        assert_eq!(mocks[0].last_model(), "llama-3-70b");
+        assert_eq!(mocks[0].last_model(), "synthetic-model-042");
     }
 
     #[tokio::test]
@@ -335,33 +335,33 @@ mod tests {
         );
 
         let result = router
-            .simple_chat("hello", "anthropic/claude-sonnet-4-20250514", 0.5)
+            .simple_chat("hello", "anthropic/synthetic-model-014", 0.5)
             .await
             .unwrap();
         assert_eq!(result, "primary-response");
         assert_eq!(mocks[0].call_count(), 1);
-        assert_eq!(mocks[0].last_model(), "anthropic/claude-sonnet-4-20250514");
+        assert_eq!(mocks[0].last_model(), "anthropic/synthetic-model-014");
     }
 
     #[test]
     fn resolve_preserves_model_for_non_hints() {
         let (router, _) = make_router(vec![("default", "ok")], vec![]);
 
-        let (idx, model) = router.resolve("gpt-4o");
+        let (idx, model) = router.resolve("synthetic-model-035");
         assert_eq!(idx, 0);
-        assert_eq!(model, "gpt-4o");
+        assert_eq!(model, "synthetic-model-035");
     }
 
     #[test]
     fn resolve_strips_hint_prefix() {
         let (router, _) = make_router(
             vec![("fast", "ok"), ("smart", "ok")],
-            vec![("reasoning", "smart", "claude-opus")],
+            vec![("reasoning", "smart", "synthetic-model-008")],
         );
 
         let (idx, model) = router.resolve("hint:reasoning");
         assert_eq!(idx, 1);
-        assert_eq!(model, "claude-opus");
+        assert_eq!(model, "synthetic-model-008");
     }
 
     #[test]
@@ -443,7 +443,7 @@ mod tests {
     async fn chat_with_tools_routes_hint_correctly() {
         let (router, mocks) = make_router(
             vec![("fast", "fast-tool"), ("smart", "smart-tool")],
-            vec![("reasoning", "smart", "claude-opus")],
+            vec![("reasoning", "smart", "synthetic-model-008")],
         );
 
         let messages = vec![ChatMessage {
@@ -458,7 +458,7 @@ mod tests {
             .unwrap();
         assert_eq!(result.text.as_deref(), Some("smart-tool"));
         assert_eq!(mocks[1].call_count(), 1);
-        assert_eq!(mocks[1].last_model(), "claude-opus");
+        assert_eq!(mocks[1].last_model(), "synthetic-model-008");
         assert_eq!(mocks[0].call_count(), 0);
     }
 }

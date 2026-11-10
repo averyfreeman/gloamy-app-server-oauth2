@@ -51,7 +51,7 @@ Examples:
   ./gloamy_install.sh --install-system-deps --install-rust
   ./gloamy_install.sh --prefer-prebuilt
   ./gloamy_install.sh --prebuilt-only
-  ./gloamy_install.sh --onboard --api-key "sk-..." --provider openai [--model "gpt-5-mini"]
+  ./gloamy_install.sh --onboard --api-key "sk-..." --provider openai [--model "synthetic-model-037"]
   ./gloamy_install.sh --interactive-onboard
 
   # Compatibility entrypoint:

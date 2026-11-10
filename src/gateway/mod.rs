@@ -358,10 +358,12 @@ pub async fn run_gateway(host: &str, port: u16, config: Config) -> Result<()> {
             reasoning_enabled: config.runtime.reasoning_enabled,
         },
     )?);
-    let model = config
-        .default_model
-        .clone()
-        .unwrap_or_else(|| "anthropic/claude-sonnet-4".into());
+    let model = crate::model_catalog::require_model(
+        crate::providers::canonical_provider_name(
+            config.default_provider.as_deref().unwrap_or("openai"),
+        ),
+        config.default_model.as_deref(),
+    )?;
     let temperature = config.default_temperature;
     let mem: Arc<dyn Memory> = Arc::from(memory::create_memory_with_storage(
         &config.memory,
@@ -689,6 +691,10 @@ pub async fn run_gateway(host: &str, port: u16, config: Config) -> Result<()> {
         .route("/nextcloud-talk", post(handle_nextcloud_talk_webhook))
         // ── Web Dashboard API routes ──
         .route("/api/status", get(api::handle_api_status))
+        .route(
+            "/api/models/catalog/reload",
+            post(api::handle_api_catalog_reload),
+        )
         .route("/api/config", get(api::handle_api_config_get))
         .route("/api/tools", get(api::handle_api_tools))
         .route("/api/cron", get(api::handle_api_cron_list))
@@ -858,11 +864,22 @@ async fn persist_pairing_tokens(config: Arc<Mutex<Config>>, pairing: &PairingGua
     Ok(())
 }
 
+fn current_model(state: &AppState) -> Result<String> {
+    let config = state.config.lock();
+    crate::model_catalog::require_model(
+        crate::providers::canonical_provider_name(
+            config.default_provider.as_deref().unwrap_or("openai"),
+        ),
+        config.default_model.as_deref(),
+    )
+}
+
 /// Simple chat for webhook endpoint (no tools, for backward compatibility and testing).
 async fn run_gateway_chat_simple(
     state: &AppState,
     message: &str,
 ) -> anyhow::Result<crate::providers::ChatResponse> {
+    let model = &state.model;
     let user_messages = vec![ChatMessage::user(message)];
 
     // Keep webhook/gateway prompts aligned with channel behavior by injecting
@@ -871,7 +888,7 @@ async fn run_gateway_chat_simple(
         let config_guard = state.config.lock();
         crate::channels::build_system_prompt(
             &config_guard.workspace_dir,
-            &state.model,
+            &model,
             &[], // tools - empty for simple chat
             &[], // skills
             Some(&config_guard.identity),
@@ -894,7 +911,7 @@ async fn run_gateway_chat_simple(
                 messages: &prepared.messages,
                 tools: None,
             },
-            &state.model,
+            &model,
             state.temperature,
         )
         .await
@@ -920,7 +937,8 @@ async fn run_gateway_api_chat(
         "/api/chat received; building agent"
     );
 
-    let config = state.config.lock().clone();
+    let mut config = state.config.lock().clone();
+    config.default_model = Some(state.model.clone());
     let t_config = t_start.elapsed();
 
     let mut agent = Agent::from_config(&config)?;
@@ -986,7 +1004,7 @@ pub struct ApiChatBody {
 /// Auth: bearer token (pairing). Rate-limited via the webhook limiter since a
 /// chat request is similarly expensive.
 async fn handle_api_chat(
-    State(state): State<AppState>,
+    State(mut state): State<AppState>,
     ConnectInfo(peer_addr): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
     body: Result<Json<ApiChatBody>, axum::extract::rejection::JsonRejection>,
@@ -1041,6 +1059,16 @@ async fn handle_api_chat(
         let err = serde_json::json!({"error": "message must be a non-empty string"});
         return (StatusCode::BAD_REQUEST, Json(err));
     }
+
+    state.model = match current_model(&state) {
+        Ok(model) => model,
+        Err(error) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": error.to_string()})),
+            );
+        }
+    };
 
     let provider_label = state
         .config
@@ -1107,7 +1135,7 @@ async fn handle_api_chat(
 
 /// POST /webhook — main webhook endpoint
 async fn handle_webhook(
-    State(state): State<AppState>,
+    State(mut state): State<AppState>,
     ConnectInfo(peer_addr): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
     body: Result<Json<WebhookBody>, axum::extract::rejection::JsonRejection>,
@@ -1186,6 +1214,16 @@ async fn handle_webhook(
             return (StatusCode::OK, Json(body));
         }
     }
+
+    state.model = match current_model(&state) {
+        Ok(model) => model,
+        Err(error) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": error.to_string()})),
+            );
+        }
+    };
 
     let message = &webhook_body.message;
 
@@ -1833,6 +1871,75 @@ mod tests {
     fn app_state_is_clone() {
         fn assert_clone<T: Clone>() {}
         assert_clone::<AppState>();
+    }
+
+    #[tokio::test]
+    async fn catalog_reload_requires_bearer_and_rejects_invalid_replacement() {
+        let mut state = AppState {
+            config: Arc::new(Mutex::new(Config::default())),
+            provider: Arc::new(MockProvider::default()),
+            model: "test-model".into(),
+            temperature: 0.0,
+            mem: Arc::new(MockMemory),
+            auto_save: false,
+            webhook_secret_hash: None,
+            pairing: Arc::new(PairingGuard::new(false, &[])),
+            trust_forwarded_headers: false,
+            rate_limiter: Arc::new(GatewayRateLimiter::new(100, 100, 100)),
+            idempotency_store: Arc::new(IdempotencyStore::new(Duration::from_secs(300), 1000)),
+            whatsapp: None,
+            whatsapp_app_secret: None,
+            linq: None,
+            linq_signing_secret: None,
+            nextcloud_talk: None,
+            nextcloud_talk_webhook_secret: None,
+            wati: None,
+            observer: Arc::new(crate::observability::NoopObserver),
+            tools_registry: Arc::new(Vec::new()),
+            cost_tracker: None,
+            event_tx: tokio::sync::broadcast::channel(16).0,
+        };
+        let directory = tempfile::TempDir::new().unwrap();
+        state.config.lock().config_path = directory.path().join("config.toml");
+        let response = api::handle_api_catalog_reload(State(state.clone()), HeaderMap::new())
+            .await
+            .into_response();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        state.pairing = Arc::new(PairingGuard::new(false, &["test-catalog-token".into()]));
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::AUTHORIZATION,
+            HeaderValue::from_static("Bearer wrong-token"),
+        );
+        let response = api::handle_api_catalog_reload(State(state.clone()), headers.clone())
+            .await
+            .into_response();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        headers.insert(
+            header::AUTHORIZATION,
+            HeaderValue::from_static("Bearer test-catalog-token"),
+        );
+        std::fs::write(
+            directory.path().join("model-catalog.toml"),
+            include_str!("../model_catalog.toml"),
+        )
+        .unwrap();
+        let response = api::handle_api_catalog_reload(State(state.clone()), headers.clone())
+            .await
+            .into_response();
+        assert_eq!(response.status(), StatusCode::OK);
+        // Invalid files must never publish, even if the caller is authenticated.
+        std::fs::write(directory.path().join("model-catalog.toml"), "invalid TOML").unwrap();
+        let response = api::handle_api_catalog_reload(State(state), headers)
+            .await
+            .into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(
+            body["error"],
+            "Catalog reload failed; last valid snapshot retained"
+        );
     }
 
     #[tokio::test]

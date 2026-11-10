@@ -31,20 +31,19 @@ Edit `~/.gloamy/config.toml`:
 ```toml
 api_key = "YOUR_ZAI_API_KEY"
 default_provider = "zai"
-default_model = "glm-5"
+default_model = "MODEL_ID_FROM_ZAI_DISCOVERY"
 default_temperature = 0.7
 ```
 
-## Available Models
+The model value above is a placeholder. Model IDs and availability vary by account, endpoint, and region. Gloamy does not currently include a verified curated recommendation for this provider. With an API key configured, discover IDs and choose one exactly as returned:
 
-| Model | Description |
-|-------|-------------|
-| `glm-5` | Default in onboarding; strongest reasoning |
-| `glm-4.7` | Strong general-purpose quality |
-| `glm-4.6` | Balanced baseline |
-| `glm-4.5-air` | Lower-latency option |
+```bash
+gloamy models refresh --provider zai
+gloamy models list --provider zai
+gloamy models set MODEL_ID_FROM_ZAI_DISCOVERY
+```
 
-Model availability can vary by account/region, so use the `/models` API when in doubt.
+Alternatively, pass the chosen ID to `gloamy onboard --provider zai --model <MODEL_ID>`. Gloamy preserves that explicit choice even when it is outside the curated catalog.
 
 ## Verify Setup
 
@@ -56,7 +55,7 @@ curl -X POST "https://api.z.ai/api/coding/paas/v4/chat/completions" \
   -H "Authorization: Bearer YOUR_ZAI_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "glm-5",
+    "model": "MODEL_ID_FROM_ZAI_DISCOVERY",
     "messages": [{"role": "user", "content": "Hello"}]
   }'
 ```
@@ -104,9 +103,9 @@ The key format is `id.secret` (for example: `abc123.xyz789`).
 **Symptom:** `rate_limited` errors
 
 **Solution:**
-- Wait and retry
-- Check your Z.AI plan limits
-- Try `glm-4.5-air` for lower latency and higher quota tolerance
+- Wait and retry.
+- Check your Z.AI plan limits.
+- If your account offers multiple model IDs, discover them from the configured endpoint and choose one that meets the latency and quota needs.
 
 ### Authentication Errors
 
@@ -122,11 +121,13 @@ The key format is `id.secret` (for example: `abc123.xyz789`).
 **Symptom:** Model not available error
 
 **Solution:**
-- List available models:
+- List model IDs exposed by the configured endpoint:
 ```bash
 curl -s "https://api.z.ai/api/coding/paas/v4/models" \
   -H "Authorization: Bearer YOUR_ZAI_API_KEY" | jq '.data[].id'
 ```
+
+For the eight-month curated eligibility rule, exact catalog file schema, and missing-rate behavior, see [Model Catalog](config-reference.md#curated-model-catalog). Catalog provider research is not exhaustive; a provider without an entry has no verified automatic default yet.
 
 ## Getting an API Key
 

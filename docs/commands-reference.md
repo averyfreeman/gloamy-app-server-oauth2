@@ -2,7 +2,7 @@
 
 This reference is derived from the current CLI surface (`gloamy --help`).
 
-Last verified: **April 5, 2026**.
+Last verified: **November 9, 2026**.
 
 ## Top-Level Commands
 
@@ -55,7 +55,7 @@ Last verified: **April 5, 2026**.
 
 Tip:
 
-- In interactive chat, you can ask for route changes in natural language (for example “conversation uses kimi, coding uses gpt-5.3-codex”); the assistant can persist this via tool `model_routing_config`.
+- In interactive chat, you can ask for route changes in natural language (for example “conversation uses kimi, coding uses synthetic-model-039”); the assistant can persist this via tool `model_routing_config`.
 
 Runtime notes:
 
@@ -190,9 +190,12 @@ Notes:
 - `gloamy models refresh --provider <ID>`
 - `gloamy models refresh --all`
 - `gloamy models refresh --force`
+- `gloamy models list --provider <ID>`
 - `gloamy models set <model_id>`
 
 `models refresh` currently supports live catalog refresh for provider IDs: `openrouter`, `openai`, `codex-app-server`, `anthropic`, `groq`, `mistral`, `deepseek`, `xai`, `together-ai`, `gemini`, `ollama`, `llamacpp`, `sglang`, `vllm`, `astrai`, `venice`, `fireworks`, `cohere`, `moonshot`, `glm`, `zai`, `qwen`, and `nvidia`.
+
+`models list` shows eligible curated choices from the current catalog, the configured selection, and any separately cached provider-discovered IDs. Provider refresh is live discovery from that provider or endpoint and is stored in a separate cache. It does not edit the curated `model-catalog.toml`; ordinary catalog loading never contacts a model vendor. When `default_model` is unset, Gloamy selects an eligible recommended model from the local catalog for the configured provider. If none exists, refresh and list that provider, then set an exact returned ID with `gloamy models set <MODEL_ID>`, or provide one directly with `--model`.
 
 For `codex-app-server`, refresh the locally installed Codex model catalog with `gloamy models refresh --force --provider codex-app-server`. The catalog contains the model IDs exposed by that Codex installation and account. Use `gloamy models list --provider codex-app-server` to inspect the cached IDs, then `gloamy models set <MODEL_ID>` to select one. `default` delegates model selection to Codex.
 
@@ -203,7 +206,9 @@ For `codex-app-server`, refresh the locally installed Codex model catalog with `
 | `--all` | Refresh all providers that support live model discovery |
 | `--force` | Force refresh bypassing cache |
 
-`models set <model_id>` updates `default_model` in config and activates immediately.
+`models set <model_id>` updates `default_model` in config and activates immediately. Configured model IDs are preserved exactly; Gloamy does not guess by suffix or capitalization.
+
+The curated catalog is separate from provider discovery. New processes load `model-catalog.toml` from the active config directory when present, using the bundled catalog only when that file is absent. A present invalid file is an error. A running gateway can reload a validated replacement with authenticated `POST /api/models/catalog/reload`; failure keeps its last valid snapshot. See the [catalog schema and behavior](config-reference.md#curated-model-catalog) and [reload endpoint](gateway-api-reference.md#post-apimodelscatalogreload).
 
 ### `doctor`
 

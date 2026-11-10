@@ -294,18 +294,18 @@ mod tests {
         let obs = PrometheusObserver::new();
         obs.record_event(&ObserverEvent::AgentStart {
             provider: "openrouter".into(),
-            model: "claude-sonnet".into(),
+            model: "synthetic-model-012".into(),
         });
         obs.record_event(&ObserverEvent::AgentEnd {
             provider: "openrouter".into(),
-            model: "claude-sonnet".into(),
+            model: "synthetic-model-012".into(),
             duration: Duration::from_millis(500),
             tokens_used: Some(100),
             cost_usd: None,
         });
         obs.record_event(&ObserverEvent::AgentEnd {
             provider: "openrouter".into(),
-            model: "claude-sonnet".into(),
+            model: "synthetic-model-012".into(),
             duration: Duration::ZERO,
             tokens_used: None,
             cost_usd: None,
@@ -346,7 +346,7 @@ mod tests {
         let obs = PrometheusObserver::new();
         obs.record_event(&ObserverEvent::AgentStart {
             provider: "openrouter".into(),
-            model: "claude-sonnet".into(),
+            model: "synthetic-model-012".into(),
         });
         obs.record_event(&ObserverEvent::ToolCall {
             tool: "shell".into(),
@@ -437,7 +437,7 @@ mod tests {
 
         obs.record_event(&ObserverEvent::LlmResponse {
             provider: "openrouter".into(),
-            model: "claude-sonnet".into(),
+            model: "synthetic-model-012".into(),
             duration: Duration::from_millis(200),
             success: true,
             error_message: None,
@@ -446,7 +446,7 @@ mod tests {
         });
         obs.record_event(&ObserverEvent::LlmResponse {
             provider: "openrouter".into(),
-            model: "claude-sonnet".into(),
+            model: "synthetic-model-012".into(),
             duration: Duration::from_millis(300),
             success: true,
             error_message: None,
@@ -456,13 +456,13 @@ mod tests {
 
         let output = obs.encode();
         assert!(output.contains(
-            r#"gloamy_llm_requests_total{model="claude-sonnet",provider="openrouter",success="true"} 2"#
+            r#"gloamy_llm_requests_total{model="synthetic-model-012",provider="openrouter",success="true"} 2"#
         ));
         assert!(output.contains(
-            r#"gloamy_tokens_input_total{model="claude-sonnet",provider="openrouter"} 300"#
+            r#"gloamy_tokens_input_total{model="synthetic-model-012",provider="openrouter"} 300"#
         ));
         assert!(output.contains(
-            r#"gloamy_tokens_output_total{model="claude-sonnet",provider="openrouter"} 130"#
+            r#"gloamy_tokens_output_total{model="synthetic-model-012",provider="openrouter"} 130"#
         ));
     }
 
@@ -472,7 +472,7 @@ mod tests {
 
         obs.record_event(&ObserverEvent::LlmResponse {
             provider: "ollama".into(),
-            model: "llama3".into(),
+            model: "synthetic-model-048".into(),
             duration: Duration::from_millis(100),
             success: false,
             error_message: Some("timeout".into()),
@@ -482,7 +482,7 @@ mod tests {
 
         let output = obs.encode();
         assert!(output.contains(
-            r#"gloamy_llm_requests_total{model="llama3",provider="ollama",success="false"} 1"#
+            r#"gloamy_llm_requests_total{model="synthetic-model-048",provider="ollama",success="false"} 1"#
         ));
         // Token counters should not appear (no data recorded)
         assert!(!output.contains("gloamy_tokens_input_total{"));

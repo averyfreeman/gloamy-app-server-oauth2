@@ -70,7 +70,7 @@ pub use whatsapp_web::WhatsAppWebChannel;
 
 use crate::agent::host::HostAgent;
 use crate::agent::loop_::{
-    build_tool_instructions, run_tool_call_loop, scrub_credentials, TaskPersistenceContext,
+    TaskPersistenceContext, build_tool_instructions, run_tool_call_loop, scrub_credentials,
 };
 use crate::agent::task_store::{self, TaskSnapshot, TaskStatus, TaskStore};
 use crate::agent::worker::AppWorker;
@@ -78,7 +78,7 @@ use crate::config::Config;
 use crate::identity;
 use crate::memory::episode::EpisodeManager;
 use crate::memory::{self, Memory};
-use crate::observability::{self, runtime_trace, Observer};
+use crate::observability::{self, Observer, runtime_trace};
 use crate::perception::traits::{PerceptionProvider, ScreenState};
 use crate::providers::{self, ChatMessage, Provider};
 use crate::runtime;
@@ -218,6 +218,7 @@ struct ModelCacheEntry {
 #[derive(Debug, Clone)]
 struct ChannelRuntimeDefaults {
     default_provider: String,
+    model_is_configured: bool,
     model: String,
     temperature: f64,
     api_key: Option<String>,
@@ -787,22 +788,23 @@ fn resolved_default_provider(config: &Config) -> String {
         .unwrap_or_else(|| "openai".to_string())
 }
 
-fn resolved_default_model(config: &Config) -> String {
-    config
-        .default_model
-        .clone()
-        .unwrap_or_else(|| "anthropic/claude-sonnet-4.6".to_string())
+fn resolved_default_model(config: &Config) -> Result<String> {
+    crate::model_catalog::require_model(
+        crate::providers::canonical_provider_name(&resolved_default_provider(config)),
+        config.default_model.as_deref(),
+    )
 }
 
-fn runtime_defaults_from_config(config: &Config) -> ChannelRuntimeDefaults {
-    ChannelRuntimeDefaults {
+fn runtime_defaults_from_config(config: &Config) -> Result<ChannelRuntimeDefaults> {
+    Ok(ChannelRuntimeDefaults {
         default_provider: resolved_default_provider(config),
-        model: resolved_default_model(config),
+        model: resolved_default_model(config)?,
+        model_is_configured: config.default_model.is_some(),
         temperature: config.default_temperature,
         api_key: config.api_key.clone(),
         api_url: config.api_url.clone(),
         reliability: config.reliability.clone(),
-    }
+    })
 }
 
 fn runtime_config_path(ctx: &ChannelRuntimeContext) -> Option<PathBuf> {
@@ -825,6 +827,7 @@ fn runtime_defaults_snapshot(ctx: &ChannelRuntimeContext) -> ChannelRuntimeDefau
     ChannelRuntimeDefaults {
         default_provider: ctx.default_provider.as_str().to_string(),
         model: ctx.model.as_str().to_string(),
+        model_is_configured: true,
         temperature: ctx.temperature,
         api_key: ctx.api_key.clone(),
         api_url: ctx.api_url.clone(),
@@ -873,7 +876,7 @@ async fn load_runtime_defaults_from_config_file(path: &Path) -> Result<RuntimeCo
 
     parsed.apply_env_overrides();
     Ok(RuntimeConfigReload {
-        defaults: runtime_defaults_from_config(&parsed),
+        defaults: runtime_defaults_from_config(&parsed)?,
         allowed_commands: parsed.autonomy.allowed_commands.clone(),
         max_actions_per_hour: parsed.autonomy.max_actions_per_hour,
         require_approval_for_medium_risk: parsed.autonomy.require_approval_for_medium_risk,
@@ -977,30 +980,43 @@ async fn maybe_apply_runtime_config_update(ctx: &ChannelRuntimeContext) -> Resul
     Ok(())
 }
 
-fn default_route_selection(ctx: &ChannelRuntimeContext) -> ChannelRouteSelection {
+fn default_route_selection(ctx: &ChannelRuntimeContext) -> Result<ChannelRouteSelection> {
     let defaults = runtime_defaults_snapshot(ctx);
-    ChannelRouteSelection {
+    let model = crate::model_catalog::require_model(
+        crate::providers::canonical_provider_name(&defaults.default_provider),
+        defaults
+            .model_is_configured
+            .then_some(defaults.model.as_str()),
+    )?;
+    Ok(ChannelRouteSelection {
         provider: defaults.default_provider,
-        model: defaults.model,
-    }
+        model,
+    })
 }
 
-fn get_route_selection(ctx: &ChannelRuntimeContext, sender_key: &str) -> ChannelRouteSelection {
-    ctx.route_overrides
+fn get_route_selection(
+    ctx: &ChannelRuntimeContext,
+    sender_key: &str,
+) -> Result<ChannelRouteSelection> {
+    let selection = ctx
+        .route_overrides
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .get(sender_key)
-        .cloned()
-        .unwrap_or_else(|| default_route_selection(ctx))
+        .cloned();
+    match selection {
+        Some(route) => Ok(route),
+        None => default_route_selection(ctx),
+    }
 }
 
 fn set_route_selection(ctx: &ChannelRuntimeContext, sender_key: &str, next: ChannelRouteSelection) {
-    let default_route = default_route_selection(ctx);
+    let default_route = default_route_selection(ctx).ok();
     let mut routes = ctx
         .route_overrides
         .lock()
         .unwrap_or_else(|e| e.into_inner());
-    if next == default_route {
+    if default_route.as_ref() == Some(&next) {
         routes.remove(sender_key);
     } else {
         routes.insert(sender_key.to_string(), next);
@@ -1279,7 +1295,11 @@ async fn handle_runtime_command_if_needed(
     };
 
     let sender_key = conversation_history_key(msg);
-    let mut current = get_route_selection(ctx, &sender_key);
+    let mut current =
+        get_route_selection(ctx, &sender_key).unwrap_or_else(|_| ChannelRouteSelection {
+            provider: runtime_defaults_snapshot(ctx).default_provider,
+            model: String::new(),
+        });
 
     let response = match command {
         ChannelRuntimeCommand::ShowProviders => build_providers_help_response(&current),
@@ -1898,7 +1918,20 @@ async fn process_channel_message(
     }
 
     let history_key = conversation_history_key(&msg);
-    let route = get_route_selection(ctx.as_ref(), &history_key);
+    let route = match get_route_selection(ctx.as_ref(), &history_key) {
+        Ok(route) => route,
+        Err(error) => {
+            if let Some(channel) = target_channel.as_ref() {
+                let _ = channel
+                    .send(
+                        &SendMessage::new(error.to_string(), &msg.reply_target)
+                            .in_thread(msg.thread_ts.clone()),
+                    )
+                    .await;
+            }
+            return;
+        }
+    };
     let runtime_defaults = runtime_defaults_snapshot(ctx.as_ref());
     let auto_voice_reply_plan =
         resolve_auto_voice_reply_plan(&ctx.tts, target_channel.as_ref(), &msg);
@@ -3388,7 +3421,9 @@ fn collect_configured_channels(
                         )),
                     });
                 } else {
-                    tracing::warn!("WhatsApp Cloud API configured but missing required fields (phone_number_id, access_token, verify_token)");
+                    tracing::warn!(
+                        "WhatsApp Cloud API configured but missing required fields (phone_number_id, access_token, verify_token)"
+                    );
                 }
             }
             "web" => {
@@ -3409,11 +3444,15 @@ fn collect_configured_channels(
                 }
                 #[cfg(not(feature = "whatsapp-web"))]
                 {
-                    tracing::warn!("WhatsApp Web backend requires 'whatsapp-web' feature. Enable with: cargo build --features whatsapp-web");
+                    tracing::warn!(
+                        "WhatsApp Web backend requires 'whatsapp-web' feature. Enable with: cargo build --features whatsapp-web"
+                    );
                 }
             }
             _ => {
-                tracing::warn!("WhatsApp config invalid: neither phone_number_id (Cloud API) nor session_path (Web) is set");
+                tracing::warn!(
+                    "WhatsApp config invalid: neither phone_number_id (Cloud API) nor session_path (Web) is set"
+                );
             }
         }
     }
@@ -3664,7 +3703,7 @@ async fn start_channels_internal(config: Config, run_scheduler: bool) -> Result<
         store.insert(
             config.config_path.clone(),
             RuntimeConfigState {
-                defaults: runtime_defaults_from_config(&config),
+                defaults: runtime_defaults_from_config(&config)?,
                 last_applied_stamp: initial_stamp,
                 security: Some(Arc::clone(&security)),
             },
@@ -3690,7 +3729,7 @@ async fn start_channels_internal(config: Config, run_scheduler: bool) -> Result<
     };
     let runtime: Arc<dyn runtime::RuntimeAdapter> =
         Arc::from(runtime::create_runtime(&config.runtime)?);
-    let model = resolved_default_model(&config);
+    let model = resolved_default_model(&config)?;
     let temperature = config.default_temperature;
     let mem: Arc<dyn Memory> = Arc::from(memory::create_memory_with_storage(
         &config.memory,
@@ -4000,8 +4039,8 @@ mod tests {
     use crate::providers::{ChatMessage, Provider};
     use crate::tools::{Tool, ToolResult};
     use std::collections::{HashMap, HashSet};
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use tempfile::TempDir;
 
     #[derive(Default)]
@@ -4517,12 +4556,13 @@ mod tests {
 
         clear_sender_history(&ctx, &sender).await;
 
-        assert!(ctx
-            .conversation_histories
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .get(&sender)
-            .is_none());
+        assert!(
+            ctx.conversation_histories
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .get(&sender)
+                .is_none()
+        );
         assert!(store.load_by_thread_id(&sender).await.unwrap().is_none());
     }
 
@@ -5725,6 +5765,7 @@ BTC is currently around $65,000 based on latest tool output."#
                     defaults: ChannelRuntimeDefaults {
                         default_provider: "test-provider".to_string(),
                         model: "hot-reloaded-model".to_string(),
+                        model_is_configured: true,
                         temperature: 0.5,
                         api_key: None,
                         api_url: None,
@@ -6206,12 +6247,16 @@ BTC is currently around $65,000 based on latest tool output."#
             .unwrap_or_else(|e| e.into_inner());
         assert_eq!(calls.len(), 2);
         let second_call = &calls[1];
-        assert!(second_call
-            .iter()
-            .any(|(role, content)| { role == "user" && content.contains("forwarded content") }));
-        assert!(second_call
-            .iter()
-            .any(|(role, content)| { role == "user" && content.contains("summarize this") }));
+        assert!(
+            second_call
+                .iter()
+                .any(|(role, content)| { role == "user" && content.contains("forwarded content") })
+        );
+        assert!(
+            second_call
+                .iter()
+                .any(|(role, content)| { role == "user" && content.contains("summarize this") })
+        );
         assert!(
             !second_call.iter().any(|(role, _)| role == "assistant"),
             "cancelled turn should not persist an assistant response"
@@ -6462,7 +6507,7 @@ BTC is currently around $65,000 based on latest tool output."#
             ("shell", "Run commands"),
             ("memory_recall", "Search memory"),
         ];
-        let prompt = build_system_prompt(ws.path(), "gpt-4o", &tools, &[], None, None);
+        let prompt = build_system_prompt(ws.path(), "synthetic-model-035", &tools, &[], None, None);
 
         assert!(prompt.contains("**shell**"));
         assert!(prompt.contains("Run commands"));
@@ -6473,7 +6518,8 @@ BTC is currently around $65,000 based on latest tool output."#
     fn prompt_includes_single_tool_protocol_block_after_append() {
         let ws = make_workspace();
         let tools = vec![("shell", "Run commands")];
-        let mut prompt = build_system_prompt(ws.path(), "gpt-4o", &tools, &[], None, None);
+        let mut prompt =
+            build_system_prompt(ws.path(), "synthetic-model-035", &tools, &[], None, None);
 
         assert!(
             !prompt.contains("## Tool Use Protocol"),
@@ -6589,9 +6635,9 @@ BTC is currently around $65,000 based on latest tool output."#
     #[test]
     fn prompt_runtime_metadata() {
         let ws = make_workspace();
-        let prompt = build_system_prompt(ws.path(), "claude-sonnet-4", &[], &[], None, None);
+        let prompt = build_system_prompt(ws.path(), "synthetic-model-013", &[], &[], None, None);
 
-        assert!(prompt.contains("Model: claude-sonnet-4"));
+        assert!(prompt.contains("Model: synthetic-model-013"));
         assert!(prompt.contains(&format!("OS: {}", std::env::consts::OS)));
         assert!(prompt.contains("Host:"));
     }
@@ -6623,8 +6669,11 @@ BTC is currently around $65,000 based on latest tool output."#
         assert!(prompt.contains("<description>Review code for bugs</description>"));
         assert!(prompt.contains("SKILL.md</location>"));
         assert!(prompt.contains("<instructions>"));
-        assert!(prompt
-            .contains("<instruction>Always run cargo test before final response.</instruction>"));
+        assert!(
+            prompt.contains(
+                "<instruction>Always run cargo test before final response.</instruction>"
+            )
+        );
         assert!(prompt.contains("<tools>"));
         assert!(prompt.contains("<name>lint</name>"));
         assert!(prompt.contains("<kind>shell</kind>"));
@@ -6667,8 +6716,11 @@ BTC is currently around $65,000 based on latest tool output."#
         assert!(prompt.contains("<location>skills/code-review/SKILL.md</location>"));
         assert!(prompt.contains("loaded on demand"));
         assert!(!prompt.contains("<instructions>"));
-        assert!(!prompt
-            .contains("<instruction>Always run cargo test before final response.</instruction>"));
+        assert!(
+            !prompt.contains(
+                "<instruction>Always run cargo test before final response.</instruction>"
+            )
+        );
         assert!(!prompt.contains("<tools>"));
     }
 
@@ -7418,12 +7470,16 @@ This is an example JSON object for profile settings."#;
 
         let channels = collect_configured_channels(&config, "test");
 
-        assert!(channels
-            .iter()
-            .any(|entry| entry.display_name == "Mattermost"));
-        assert!(channels
-            .iter()
-            .any(|entry| entry.channel.name() == "mattermost"));
+        assert!(
+            channels
+                .iter()
+                .any(|entry| entry.display_name == "Mattermost")
+        );
+        assert!(
+            channels
+                .iter()
+                .any(|entry| entry.channel.name() == "mattermost")
+        );
     }
 
     struct AlwaysFailChannel {
@@ -7495,10 +7551,12 @@ This is an example JSON object for profile settings."#;
         let component = &snapshot["components"]["channel:test-supervised-fail"];
         assert_eq!(component["status"], "error");
         assert!(component["restart_count"].as_u64().unwrap_or(0) >= 1);
-        assert!(component["last_error"]
-            .as_str()
-            .unwrap_or("")
-            .contains("listen boom"));
+        assert!(
+            component["last_error"]
+                .as_str()
+                .unwrap_or("")
+                .contains("listen boom")
+        );
         assert!(calls.load(Ordering::SeqCst) >= 1);
     }
 
@@ -7522,19 +7580,19 @@ This is an example JSON object for profile settings."#;
         );
 
         tokio::time::sleep(Duration::from_millis(35)).await;
-        let first_last_ok = crate::health::snapshot_json()["components"][&component_name]
-            ["last_ok"]
-            .as_str()
-            .unwrap_or("")
-            .to_string();
+        let first_last_ok =
+            crate::health::snapshot_json()["components"][&component_name]["last_ok"]
+                .as_str()
+                .unwrap_or("")
+                .to_string();
         assert!(!first_last_ok.is_empty());
 
         tokio::time::sleep(Duration::from_millis(70)).await;
-        let second_last_ok = crate::health::snapshot_json()["components"][&component_name]
-            ["last_ok"]
-            .as_str()
-            .unwrap_or("")
-            .to_string();
+        let second_last_ok =
+            crate::health::snapshot_json()["components"][&component_name]["last_ok"]
+                .as_str()
+                .unwrap_or("")
+                .to_string();
         let first = chrono::DateTime::parse_from_rfc3339(&first_last_ok)
             .expect("last_ok should be valid RFC3339");
         let second = chrono::DateTime::parse_from_rfc3339(&second_last_ok)

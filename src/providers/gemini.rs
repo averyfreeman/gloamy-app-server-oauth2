@@ -186,7 +186,7 @@ struct CandidateContent {
 struct ResponsePart {
     #[serde(default)]
     text: Option<String>,
-    /// Thinking models (e.g. gemini-3-pro-preview) mark reasoning parts with `thought: true`.
+    /// Thinking models (e.g. synthetic-model-024) mark reasoning parts with `thought: true`.
     #[serde(default)]
     thought: bool,
 }
@@ -194,7 +194,7 @@ struct ResponsePart {
 impl CandidateContent {
     /// Extract effective text, skipping thinking/signature parts.
     ///
-    /// Gemini thinking models (e.g. gemini-3-pro-preview) return parts like:
+    /// Gemini thinking models (e.g. synthetic-model-024) return parts like:
     /// - `{"thought": true, "text": "reasoning..."}` — internal reasoning
     /// - `{"text": "actual answer"}` — the real response
     /// - `{"thoughtSignature": "..."}` — opaque signature (no text field)
@@ -1498,34 +1498,34 @@ mod tests {
     #[test]
     fn model_name_formatting() {
         assert_eq!(
-            GeminiProvider::format_model_name("gemini-2.0-flash"),
-            "models/gemini-2.0-flash"
+            GeminiProvider::format_model_name("synthetic-model-021"),
+            "models/synthetic-model-021"
         );
         assert_eq!(
-            GeminiProvider::format_model_name("models/gemini-1.5-pro"),
-            "models/gemini-1.5-pro"
+            GeminiProvider::format_model_name("models/synthetic-model-020"),
+            "models/synthetic-model-020"
         );
         assert_eq!(
-            GeminiProvider::format_internal_model_name("models/gemini-2.5-flash"),
-            "gemini-2.5-flash"
+            GeminiProvider::format_internal_model_name("models/synthetic-model-022"),
+            "synthetic-model-022"
         );
         assert_eq!(
-            GeminiProvider::format_internal_model_name("gemini-2.5-flash"),
-            "gemini-2.5-flash"
+            GeminiProvider::format_internal_model_name("synthetic-model-022"),
+            "synthetic-model-022"
         );
     }
 
     #[test]
     fn api_key_url_includes_key_query_param() {
         let auth = GeminiAuth::ExplicitKey("api-key-123".into());
-        let url = GeminiProvider::build_generate_content_url("gemini-2.0-flash", &auth);
+        let url = GeminiProvider::build_generate_content_url("synthetic-model-021", &auth);
         assert!(url.contains(":generateContent?key=api-key-123"));
     }
 
     #[test]
     fn oauth_url_uses_internal_endpoint() {
         let auth = test_oauth_auth("ya29.test-token");
-        let url = GeminiProvider::build_generate_content_url("gemini-2.0-flash", &auth);
+        let url = GeminiProvider::build_generate_content_url("synthetic-model-021", &auth);
         assert!(url.starts_with("https://cloudcode-pa.googleapis.com/v1internal"));
         assert!(url.ends_with(":generateContent"));
         assert!(!url.contains("generativelanguage.googleapis.com"));
@@ -1535,16 +1535,16 @@ mod tests {
     #[test]
     fn api_key_url_uses_public_endpoint() {
         let auth = GeminiAuth::ExplicitKey("api-key-123".into());
-        let url = GeminiProvider::build_generate_content_url("gemini-2.0-flash", &auth);
+        let url = GeminiProvider::build_generate_content_url("synthetic-model-021", &auth);
         assert!(url.contains("generativelanguage.googleapis.com/v1beta"));
-        assert!(url.contains("models/gemini-2.0-flash"));
+        assert!(url.contains("models/synthetic-model-021"));
     }
 
     #[test]
     fn oauth_request_uses_bearer_auth_header() {
         let provider = test_provider(Some(test_oauth_auth("ya29.mock-token")));
         let auth = test_oauth_auth("ya29.mock-token");
-        let url = GeminiProvider::build_generate_content_url("gemini-2.0-flash", &auth);
+        let url = GeminiProvider::build_generate_content_url("synthetic-model-021", &auth);
         let body = GenerateContentRequest {
             contents: vec![Content {
                 role: Some("user".into()),
@@ -1564,7 +1564,7 @@ mod tests {
                 &auth,
                 &url,
                 &body,
-                "gemini-2.0-flash",
+                "synthetic-model-021",
                 true,
                 Some("test-project"),
                 Some("ya29.mock-token"),
@@ -1585,7 +1585,7 @@ mod tests {
     fn oauth_request_wraps_payload_in_request_envelope() {
         let provider = test_provider(Some(test_oauth_auth("ya29.mock-token")));
         let auth = test_oauth_auth("ya29.mock-token");
-        let url = GeminiProvider::build_generate_content_url("gemini-2.0-flash", &auth);
+        let url = GeminiProvider::build_generate_content_url("synthetic-model-021", &auth);
         let body = GenerateContentRequest {
             contents: vec![Content {
                 role: Some("user".into()),
@@ -1605,7 +1605,7 @@ mod tests {
                 &auth,
                 &url,
                 &body,
-                "models/gemini-2.0-flash",
+                "models/synthetic-model-021",
                 true,
                 Some("test-project"),
                 Some("ya29.mock-token"),
@@ -1619,7 +1619,7 @@ mod tests {
             .expect("json request body should be bytes");
         let json: serde_json::Value = serde_json::from_slice(payload).unwrap();
 
-        assert_eq!(json["model"], "gemini-2.0-flash");
+        assert_eq!(json["model"], "synthetic-model-021");
         assert!(json.get("generationConfig").is_none());
         assert!(json.get("request").is_some());
         assert!(json["request"].get("generationConfig").is_some());
@@ -1629,7 +1629,7 @@ mod tests {
     fn api_key_request_does_not_set_bearer_header() {
         let provider = test_provider(Some(GeminiAuth::ExplicitKey("api-key-123".into())));
         let auth = GeminiAuth::ExplicitKey("api-key-123".into());
-        let url = GeminiProvider::build_generate_content_url("gemini-2.0-flash", &auth);
+        let url = GeminiProvider::build_generate_content_url("synthetic-model-021", &auth);
         let body = GenerateContentRequest {
             contents: vec![Content {
                 role: Some("user".into()),
@@ -1649,7 +1649,7 @@ mod tests {
                 &auth,
                 &url,
                 &body,
-                "gemini-2.0-flash",
+                "synthetic-model-021",
                 true,
                 None,
                 None,
@@ -1693,7 +1693,7 @@ mod tests {
     #[test]
     fn internal_request_includes_model() {
         let request = InternalGenerateContentEnvelope {
-            model: "gemini-3-pro-preview".to_string(),
+            model: "synthetic-model-024".to_string(),
             project: Some("test-project".to_string()),
             user_prompt_id: Some("prompt-123".to_string()),
             request: InternalGenerateContentRequest {
@@ -1712,7 +1712,7 @@ mod tests {
         };
 
         let json = serde_json::to_string(&request).unwrap();
-        assert!(json.contains("\"model\":\"gemini-3-pro-preview\""));
+        assert!(json.contains("\"model\":\"synthetic-model-024\""));
         assert!(json.contains("\"request\""));
         assert!(json.contains("\"generationConfig\""));
         assert!(json.contains("\"maxOutputTokens\":8192"));
@@ -1725,7 +1725,7 @@ mod tests {
     #[test]
     fn internal_request_omits_generation_config_when_none() {
         let request = InternalGenerateContentEnvelope {
-            model: "gemini-3-pro-preview".to_string(),
+            model: "synthetic-model-024".to_string(),
             project: Some("test-project".to_string()),
             user_prompt_id: None,
             request: InternalGenerateContentRequest {
@@ -1742,13 +1742,13 @@ mod tests {
 
         let json = serde_json::to_string(&request).unwrap();
         assert!(!json.contains("generationConfig"));
-        assert!(json.contains("\"model\":\"gemini-3-pro-preview\""));
+        assert!(json.contains("\"model\":\"synthetic-model-024\""));
     }
 
     #[test]
     fn internal_request_includes_project() {
         let request = InternalGenerateContentEnvelope {
-            model: "gemini-2.5-flash".to_string(),
+            model: "synthetic-model-022".to_string(),
             project: Some("my-gcp-project-id".to_string()),
             user_prompt_id: None,
             request: InternalGenerateContentRequest {

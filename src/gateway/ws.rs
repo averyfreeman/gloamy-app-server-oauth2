@@ -12,8 +12,8 @@
 use super::AppState;
 use axum::{
     extract::{
-        ws::{Message, WebSocket},
         Query, State, WebSocketUpgrade,
+        ws::{Message, WebSocket},
     },
     response::IntoResponse,
 };
@@ -77,6 +77,18 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         if content.is_empty() {
             continue;
         }
+
+        let mut state = state.clone();
+        state.model = match super::current_model(&state) {
+            Ok(model) => model,
+            Err(error) => {
+                let response = serde_json::json!({"type": "error", "message": error.to_string()});
+                let _ = sender
+                    .send(Message::Text(response.to_string().into()))
+                    .await;
+                continue;
+            }
+        };
 
         // Process message with the LLM provider
         let provider_label = state

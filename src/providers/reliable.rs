@@ -1,9 +1,9 @@
+use super::Provider;
 use super::traits::{
     ChatMessage, ChatRequest, ChatResponse, StreamChunk, StreamOptions, StreamResult,
 };
-use super::Provider;
 use async_trait::async_trait;
-use futures_util::{stream, StreamExt};
+use futures_util::{StreamExt, stream};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
@@ -1055,10 +1055,10 @@ mod tests {
         )));
         assert!(is_non_retryable(&anyhow::anyhow!("authentication failed")));
         assert!(is_non_retryable(&anyhow::anyhow!(
-            "model glm-4.7 not found"
+            "model synthetic-model-029 not found"
         )));
         assert!(is_non_retryable(&anyhow::anyhow!(
-            "unsupported model: glm-4.7"
+            "unsupported model: synthetic-model-029"
         )));
         assert!(!is_non_retryable(&anyhow::anyhow!("429 Too Many Requests")));
         assert!(!is_non_retryable(&anyhow::anyhow!("408 Request Timeout")));
@@ -1081,8 +1081,8 @@ mod tests {
         let calls = Arc::new(AtomicUsize::new(0));
         let mut model_fallbacks = std::collections::HashMap::new();
         model_fallbacks.insert(
-            "gpt-5.3-codex".to_string(),
-            vec!["gpt-5.2-codex".to_string()],
+            "synthetic-model-039".to_string(),
+            vec!["synthetic-model-038".to_string()],
         );
 
         let provider = ReliableProvider::new(
@@ -1101,7 +1101,7 @@ mod tests {
         .with_model_fallbacks(model_fallbacks);
 
         let err = provider
-            .simple_chat("hello", "gpt-5.3-codex", 0.0)
+            .simple_chat("hello", "synthetic-model-039", 0.0)
             .await
             .expect_err("context window overflow should fail fast");
         let msg = err.to_string();
@@ -1121,7 +1121,7 @@ mod tests {
                     calls: Arc::clone(&calls),
                     fail_until_attempt: usize::MAX,
                     response: "never",
-                    error: "unsupported model: glm-4.7",
+                    error: "unsupported model: synthetic-model-029",
                 }),
             )],
             3,
@@ -1129,13 +1129,13 @@ mod tests {
         );
 
         let err = provider
-            .simple_chat("hello", "glm-4.7", 0.0)
+            .simple_chat("hello", "synthetic-model-029", 0.0)
             .await
             .expect_err("provider should fail");
         let msg = err.to_string();
 
         assert!(msg.contains("non_retryable"));
-        assert!(msg.contains("error=unsupported model: glm-4.7"));
+        assert!(msg.contains("error=unsupported model: synthetic-model-029"));
         // Non-retryable errors should not consume retry budget.
         assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
@@ -1251,12 +1251,15 @@ mod tests {
         let mock = Arc::new(ModelAwareMock {
             calls: Arc::clone(&calls),
             models_seen: parking_lot::Mutex::new(Vec::new()),
-            fail_models: vec!["claude-opus"],
+            fail_models: vec!["synthetic-model-008"],
             response: "ok from sonnet",
         });
 
         let mut fallbacks = HashMap::new();
-        fallbacks.insert("claude-opus".to_string(), vec!["claude-sonnet".to_string()]);
+        fallbacks.insert(
+            "synthetic-model-008".to_string(),
+            vec!["synthetic-model-012".to_string()],
+        );
 
         let provider = ReliableProvider::new(
             vec![(
@@ -1269,15 +1272,15 @@ mod tests {
         .with_model_fallbacks(fallbacks);
 
         let result = provider
-            .simple_chat("hello", "claude-opus", 0.0)
+            .simple_chat("hello", "synthetic-model-008", 0.0)
             .await
             .unwrap();
         assert_eq!(result, "ok from sonnet");
 
         let seen = mock.models_seen.lock();
         assert_eq!(seen.len(), 2);
-        assert_eq!(seen[0], "claude-opus");
-        assert_eq!(seen[1], "claude-sonnet");
+        assert_eq!(seen[0], "synthetic-model-008");
+        assert_eq!(seen[1], "synthetic-model-012");
     }
 
     #[tokio::test]
@@ -1401,7 +1404,7 @@ mod tests {
     fn non_retryable_rate_limit_detects_plan_restricted_model() {
         let err = anyhow::anyhow!(
             "{}",
-            "API error (429 Too Many Requests): {\"code\":1311,\"message\":\"the current account plan does not include glm-5\"}"
+            "API error (429 Too Many Requests): {\"code\":1311,\"message\":\"the current account plan does not include synthetic-model-030\"}"
         );
         assert!(
             is_non_retryable_rate_limit(&err),
@@ -1595,7 +1598,7 @@ mod tests {
                     calls: Arc::clone(&calls),
                     fail_until_attempt: usize::MAX,
                     response: "never",
-                    error: "API error (429 Too Many Requests): {\"code\":1311,\"message\":\"plan does not include glm-5\"}",
+                    error: "API error (429 Too Many Requests): {\"code\":1311,\"message\":\"plan does not include synthetic-model-030\"}",
                 }),
             )],
             5,
@@ -1904,12 +1907,15 @@ mod tests {
         let mock = Arc::new(NativeModelAwareMock {
             calls: Arc::clone(&calls),
             models_seen: parking_lot::Mutex::new(Vec::new()),
-            fail_models: vec!["claude-opus"],
+            fail_models: vec!["synthetic-model-008"],
             response_text: "ok from sonnet",
         });
 
         let mut fallbacks = HashMap::new();
-        fallbacks.insert("claude-opus".to_string(), vec!["claude-sonnet".to_string()]);
+        fallbacks.insert(
+            "synthetic-model-008".to_string(),
+            vec!["synthetic-model-012".to_string()],
+        );
 
         let provider = ReliableProvider::new(
             vec![(
@@ -1926,13 +1932,16 @@ mod tests {
             messages: &messages,
             tools: None,
         };
-        let result = provider.chat(request, "claude-opus", 0.0).await.unwrap();
+        let result = provider
+            .chat(request, "synthetic-model-008", 0.0)
+            .await
+            .unwrap();
         assert_eq!(result.text.as_deref(), Some("ok from sonnet"));
 
         let seen = mock.models_seen.lock();
         assert_eq!(seen.len(), 2);
-        assert_eq!(seen[0], "claude-opus");
-        assert_eq!(seen[1], "claude-sonnet");
+        assert_eq!(seen[0], "synthetic-model-008");
+        assert_eq!(seen[1], "synthetic-model-012");
     }
 
     /// Gap 4: `chat()` skips retries on non-retryable errors (401, 403, etc.),

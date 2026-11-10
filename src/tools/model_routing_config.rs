@@ -3,7 +3,7 @@ use crate::config::{ClassificationRule, Config, DelegateAgentConfig, ModelRouteC
 use crate::security::SecurityPolicy;
 use crate::util::MaybeSet;
 use async_trait::async_trait;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use std::fs;
 use std::sync::Arc;
@@ -355,14 +355,14 @@ impl ModelRoutingConfigTool {
                         "action": "upsert_scenario",
                         "hint": "conversation",
                         "provider": "kimi",
-                        "model": "moonshot-v1-8k",
+                        "model": "synthetic-model-051",
                         "classification_enabled": false
                     },
                     "coding": {
                         "action": "upsert_scenario",
                         "hint": "coding",
                         "provider": "openai",
-                        "model": "gpt-5.3-codex",
+                        "model": "synthetic-model-039",
                         "classification_enabled": true,
                         "keywords": ["code", "bug", "refactor", "test"],
                         "patterns": ["```"],
@@ -857,10 +857,7 @@ impl Tool for ModelRoutingConfigTool {
         let result = match action.as_str() {
             "get" => self.handle_get(),
             "list_hints" => self.handle_list_hints(),
-            "set_default"
-            | "upsert_scenario"
-            | "remove_scenario"
-            | "upsert_agent"
+            "set_default" | "upsert_scenario" | "remove_scenario" | "upsert_agent"
             | "remove_agent" => {
                 if let Some(blocked) = self.require_write_access() {
                     return Ok(blocked);
@@ -932,7 +929,7 @@ mod tests {
             .execute(json!({
                 "action": "set_default",
                 "provider": "kimi",
-                "model": "moonshot-v1-8k",
+                "model": "synthetic-model-051",
                 "temperature": 0.2
             }))
             .await
@@ -946,7 +943,7 @@ mod tests {
         );
         assert_eq!(
             output["config"]["default"]["model"].as_str(),
-            Some("moonshot-v1-8k")
+            Some("synthetic-model-051")
         );
         assert_eq!(
             output["config"]["default"]["temperature"].as_f64(),
@@ -964,7 +961,7 @@ mod tests {
                 "action": "upsert_scenario",
                 "hint": "coding",
                 "provider": "openai",
-                "model": "gpt-5.3-codex",
+                "model": "synthetic-model-039",
                 "classification_enabled": true,
                 "keywords": ["code", "bug", "refactor"],
                 "patterns": ["```"],
@@ -985,7 +982,7 @@ mod tests {
         assert!(scenarios.iter().any(|item| {
             item["hint"] == json!("coding")
                 && item["provider"] == json!("openai")
-                && item["model"] == json!("gpt-5.3-codex")
+                && item["model"] == json!("synthetic-model-039")
         }));
     }
 
@@ -999,7 +996,7 @@ mod tests {
                 "action": "upsert_scenario",
                 "hint": "coding",
                 "provider": "openai",
-                "model": "gpt-5.3-codex",
+                "model": "synthetic-model-039",
                 "classification_enabled": true,
                 "keywords": ["code"]
             }))
@@ -1031,7 +1028,7 @@ mod tests {
                 "action": "upsert_agent",
                 "name": "coder",
                 "provider": "openai",
-                "model": "gpt-5.3-codex",
+                "model": "synthetic-model-039",
                 "agentic": true,
                 "allowed_tools": ["file_read", "file_write", "shell"],
                 "max_iterations": 6
@@ -1043,7 +1040,10 @@ mod tests {
         let get_result = tool.execute(json!({"action": "get"})).await.unwrap();
         let output: Value = serde_json::from_str(&get_result.output).unwrap();
         assert_eq!(output["agents"]["coder"]["provider"], json!("openai"));
-        assert_eq!(output["agents"]["coder"]["model"], json!("gpt-5.3-codex"));
+        assert_eq!(
+            output["agents"]["coder"]["model"],
+            json!("synthetic-model-039")
+        );
         assert_eq!(output["agents"]["coder"]["agentic"], json!(true));
 
         let remove = tool
@@ -1070,7 +1070,7 @@ mod tests {
                 "action": "upsert_agent",
                 "name": "researcher",
                 "provider": "openrouter",
-                "model": "anthropic/claude-sonnet-4-6",
+                "model": "anthropic/synthetic-model-016",
                 "agentic": true
             }))
             .await

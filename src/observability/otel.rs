@@ -1,7 +1,7 @@
 use super::traits::{Observer, ObserverEvent, ObserverMetric};
 use opentelemetry::metrics::{Counter, Gauge, Histogram};
 use opentelemetry::trace::{Span, SpanKind, Status, Tracer};
-use opentelemetry::{global, KeyValue};
+use opentelemetry::{KeyValue, global};
 use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::metrics::SdkMeterProvider;
 use opentelemetry_sdk::trace::SdkTracerProvider;
@@ -402,16 +402,16 @@ mod tests {
         let obs = test_observer();
         obs.record_event(&ObserverEvent::AgentStart {
             provider: "openrouter".into(),
-            model: "claude-sonnet".into(),
+            model: "synthetic-model-012".into(),
         });
         obs.record_event(&ObserverEvent::LlmRequest {
             provider: "openrouter".into(),
-            model: "claude-sonnet".into(),
+            model: "synthetic-model-012".into(),
             messages_count: 2,
         });
         obs.record_event(&ObserverEvent::LlmResponse {
             provider: "openrouter".into(),
-            model: "claude-sonnet".into(),
+            model: "synthetic-model-012".into(),
             duration: Duration::from_millis(250),
             success: true,
             error_message: None,
@@ -420,14 +420,14 @@ mod tests {
         });
         obs.record_event(&ObserverEvent::AgentEnd {
             provider: "openrouter".into(),
-            model: "claude-sonnet".into(),
+            model: "synthetic-model-012".into(),
             duration: Duration::from_millis(500),
             tokens_used: Some(100),
             cost_usd: Some(0.0015),
         });
         obs.record_event(&ObserverEvent::AgentEnd {
             provider: "openrouter".into(),
-            model: "claude-sonnet".into(),
+            model: "synthetic-model-012".into(),
             duration: Duration::ZERO,
             tokens_used: None,
             cost_usd: None,

@@ -101,3 +101,19 @@ async def test_file_tools(tmp_path):
 
     read_result = await file_read.ainvoke({"path": str(test_file)})
     assert "Hello, World!" in read_result
+
+
+def test_agent_requires_explicit_model_when_environment_is_unset(monkeypatch):
+    from gloamy_tools import create_agent, shell
+
+    monkeypatch.delenv("GLOAMY_MODEL", raising=False)
+    with pytest.raises(ValueError, match="explicit model ID"):
+        create_agent(tools=[shell], api_key="test-key")
+
+
+def test_agent_uses_explicit_environment_model(monkeypatch):
+    from gloamy_tools import create_agent, shell
+
+    monkeypatch.setenv("GLOAMY_MODEL", "synthetic-environment-model")
+    agent = create_agent(tools=[shell], api_key="test-key")
+    assert agent.model == "synthetic-environment-model"

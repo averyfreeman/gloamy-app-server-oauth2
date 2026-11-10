@@ -1,8 +1,18 @@
 # Gloamy Providers Reference
 
-This document maps provider IDs, aliases, and credential environment variables.
+This document maps provider IDs, aliases, and credential environment variables. Model IDs and availability can change independently of provider support; choose an exact ID accepted by the account and endpoint you use. The bundled curated catalog provides defaults only where release metadata has been verified.
 
-Last verified: **February 21, 2026**.
+Last verified: **November 9, 2026**.
+
+## Curated Models and Discovery
+
+Provider support does not imply a bundled recommendation. Gloamy only recommends a curated model when its exact provider/model ID and release metadata have been verified and the model remains within the eight-calendar-month eligibility window. On this audit date, the bundled source record covers selected OpenAI, Anthropic, and Gemini API models; model research for the other provider families is incomplete. A missing recommendation is intentional until release dates and metadata can be verified.
+
+Use `gloamy models refresh --provider <ID>` to ask a provider or configured endpoint which IDs it currently exposes. Review the results with `gloamy models list --provider <ID>`, then set an exact choice with `gloamy models set <MODEL_ID>`. Discovery is live and cached separately; it neither changes the curated catalog nor runs during ordinary catalog lookup.
+
+Configured IDs, including provider-discovered and user-entered IDs, are preserved even after catalog eligibility expires. If no eligible recommendation exists and no ID is configured, provide an explicit model or discover one before starting an operation. See [model catalog schema and behavior](config-reference.md#curated-model-catalog).
+
+Catalog pricing is exact by canonical provider and model ID, with only recorded model aliases accepted. OpenAI API rates are never applied to OpenAI Codex subscription/OAuth usage by inference. Missing, tiered, or otherwise unrepresentable rates stay unknown; token counts remain available and cost totals are lower bounds. See [cost override precedence](config-reference.md#cost).
 
 ## How to List Providers
 
@@ -78,7 +88,7 @@ credential is not reused for fallback providers.
 - Auth can come from `GEMINI_API_KEY`, `GOOGLE_API_KEY`, or Gemini CLI OAuth cache (`~/.gemini/oauth_creds.json`)
 - API key requests use `generativelanguage.googleapis.com/v1beta`
 - Gemini CLI OAuth requests use `cloudcode-pa.googleapis.com/v1internal` with Code Assist request envelope semantics
-- Thinking models (e.g. `gemini-3-pro-preview`) are supported — internal reasoning parts are automatically filtered from the response
+- Thinking models are supported — internal reasoning parts are automatically filtered from the response
 
 ### Codex App Server Notes
 
@@ -119,7 +129,7 @@ credential is not reused for fallback providers.
 - Provider ID: `sglang`
 - Default endpoint: `http://localhost:30000/v1`
 - API key is optional by default; set `SGLANG_API_KEY` only when the server requires authentication.
-- Tool calling requires launching SGLang with `--tool-call-parser` (e.g. `hermes`, `llama3`, `qwen25`).
+- Tool calling requires launching SGLang with a `--tool-call-parser` value supported by the selected model and SGLang version.
 - Model discovery: `gloamy models refresh --provider sglang`
 
 ### vLLM Server Notes
@@ -146,10 +156,10 @@ credential is not reused for fallback providers.
 - API: [Converse API](https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_Converse.html)
 - Authentication: AWS AKSK (not a single API key). Set `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` environment variables.
 - Optional: `AWS_SESSION_TOKEN` for temporary/STS credentials, `AWS_REGION` or `AWS_DEFAULT_REGION` (default: `us-east-1`).
-- Default onboarding model: `anthropic.claude-sonnet-4-5-20250929-v1:0`
+- Select an exact model or inference profile enabled for the target AWS account and region; Bedrock identifiers differ from first-party provider API IDs.
 - Supports native tool calling and prompt caching (`cachePoint`).
 - Cross-region inference profiles supported (e.g., `us.anthropic.claude-*`).
-- Model IDs use Bedrock format: `anthropic.claude-sonnet-4-6`, `anthropic.claude-opus-4-6-v1`, etc.
+- Model IDs use Bedrock's provider-specific format. Confirm the exact model or inference profile ID in the Bedrock console or API before setting `default_model`.
 
 ### Ollama Reasoning Toggle
 
@@ -170,7 +180,7 @@ Behavior:
 
 - Provider ID: `kimi-code`
 - Endpoint: `https://api.kimi.com/coding/v1`
-- Default onboarding model: `kimi-for-coding` (alternative: `kimi-k2.5`)
+- Choose an exact model ID currently accepted by the configured Kimi endpoint and account before setting `default_model`.
 - Runtime auto-adds `User-Agent: KimiCLI/0.77` for compatibility.
 
 ### NVIDIA NIM Notes
@@ -180,12 +190,7 @@ Behavior:
 - Base API URL: `https://integrate.api.nvidia.com/v1`
 - Model discovery: `gloamy models refresh --provider nvidia`
 
-Recommended starter model IDs (verified against NVIDIA API catalog on February 18, 2026):
-
-- `meta/llama-3.3-70b-instruct`
-- `deepseek-ai/deepseek-v3.2`
-- `nvidia/llama-3.3-nemotron-super-49b-v1.5`
-- `nvidia/llama-3.1-nemotron-ultra-253b-v1`
+Use `gloamy models list --provider nvidia` after refresh to inspect IDs exposed to the configured NVIDIA API account. Select an exact ID supported by your account and deployment.
 
 ## Custom Endpoints
 
@@ -256,12 +261,12 @@ You can route model calls by hint using `[[model_routes]]`:
 [[model_routes]]
 hint = "reasoning"
 provider = "openrouter"
-model = "anthropic/claude-opus-4-20250514"
+model = "anthropic/synthetic-model-009"
 
 [[model_routes]]
 hint = "fast"
 provider = "groq"
-model = "llama-3.3-70b-versatile"
+model = "synthetic-model-046"
 ```
 
 Then call with a hint model name (for example from tool or integration paths):
@@ -282,7 +287,7 @@ embedding_model = "hint:semantic"
 [[embedding_routes]]
 hint = "semantic"
 provider = "openai"
-model = "text-embedding-3-small"
+model = "MODEL_ID_FROM_PROVIDER_DISCOVERY"
 dimensions = 1536
 
 [[embedding_routes]]
@@ -304,8 +309,8 @@ Optional per-route key override:
 [[embedding_routes]]
 hint = "semantic"
 provider = "openai"
-model = "text-embedding-3-small"
-api_key = "sk-route-specific"
+model = "MODEL_ID_FROM_PROVIDER_DISCOVERY"
+api_key = "your-route-specific-api-key"
 ```
 
 ## Upgrading Models Safely

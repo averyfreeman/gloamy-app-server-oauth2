@@ -174,7 +174,7 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
         },
         IntegrationEntry {
             name: "Anthropic",
-            description: "Claude 3.5/4 Sonnet & Opus",
+            description: "Anthropic language models",
             category: IntegrationCategory::AiModel,
             status_fn: |c| {
                 if c.default_provider.as_deref() == Some("anthropic") {
@@ -186,7 +186,7 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
         },
         IntegrationEntry {
             name: "OpenAI",
-            description: "GPT-4o, GPT-5, o1",
+            description: "OpenAI API language models",
             category: IntegrationCategory::AiModel,
             status_fn: |c| {
                 if c.default_provider.as_deref() == Some("openai") {
@@ -198,7 +198,7 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
         },
         IntegrationEntry {
             name: "Google",
-            description: "Gemini 2.5 Pro/Flash",
+            description: "Google Gemini language models",
             category: IntegrationCategory::AiModel,
             status_fn: |c| {
                 if c.default_model
@@ -228,7 +228,7 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
         },
         IntegrationEntry {
             name: "xAI",
-            description: "Grok 3 & 4",
+            description: "xAI language models",
             category: IntegrationCategory::AiModel,
             status_fn: |c| {
                 if c.default_model
@@ -243,7 +243,7 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
         },
         IntegrationEntry {
             name: "Mistral",
-            description: "Mistral Large & Codestral",
+            description: "Mistral language models",
             category: IntegrationCategory::AiModel,
             status_fn: |c| {
                 if c.default_model

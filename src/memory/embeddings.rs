@@ -225,7 +225,7 @@ mod tests {
 
     #[test]
     fn factory_openai() {
-        let p = create_embedding_provider("openai", Some("key"), "text-embedding-3-small", 1536);
+        let p = create_embedding_provider("openai", Some("key"), "synthetic-embedding-model", 1536);
         assert_eq!(p.name(), "openai");
         assert_eq!(p.dimensions(), 1536);
     }
@@ -235,7 +235,7 @@ mod tests {
         let p = create_embedding_provider(
             "openrouter",
             Some("sk-or-test"),
-            "openai/text-embedding-3-small",
+            "openai/synthetic-embedding-model",
             1536,
         );
         assert_eq!(p.name(), "openai"); // uses OpenAiEmbedding internally
@@ -294,7 +294,7 @@ mod tests {
 
     #[test]
     fn factory_openai_no_api_key() {
-        let p = create_embedding_provider("openai", None, "text-embedding-3-small", 1536);
+        let p = create_embedding_provider("openai", None, "synthetic-embedding-model", 1536);
         assert_eq!(p.name(), "openai");
         assert_eq!(p.dimensions(), 1536);
     }
@@ -316,7 +316,7 @@ mod tests {
         let p = OpenAiEmbedding::new(
             "https://openrouter.ai/api/v1",
             "key",
-            "openai/text-embedding-3-small",
+            "openai/synthetic-embedding-model",
             1536,
         );
         assert_eq!(

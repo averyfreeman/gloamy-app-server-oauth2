@@ -6,7 +6,7 @@ use std::time::Instant;
 use tempfile::TempDir;
 
 // We test both backends through the public memory module
-use gloamy::memory::{markdown::MarkdownMemory, sqlite::SqliteMemory, Memory, MemoryCategory};
+use gloamy::memory::{Memory, MemoryCategory, markdown::MarkdownMemory, sqlite::SqliteMemory};
 
 // ── Helpers ────────────────────────────────────────────────────
 
@@ -108,7 +108,7 @@ async fn compare_recall_quality() {
         ),
         (
             "model",
-            "Prefers Claude Sonnet for coding tasks",
+            "Prefers the configured model for coding tasks",
             MemoryCategory::Core,
         ),
         (

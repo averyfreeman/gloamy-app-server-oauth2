@@ -23,12 +23,11 @@ fn config_default_has_expected_provider() {
 }
 
 #[test]
-fn config_default_has_expected_model() {
+fn config_default_leaves_model_resolution_to_the_catalog() {
     let config = Config::default();
-    assert!(
-        config.default_model.is_some(),
-        "default config should have a default_model"
-    );
+    assert!(config.default_model.is_none());
+    let serialized = toml::to_string(&config).unwrap();
+    assert!(!serialized.contains("default_model ="));
 }
 
 #[test]
@@ -152,7 +151,7 @@ fn memory_config_default_vector_keyword_weights_sum_to_one() {
 fn config_toml_roundtrip_preserves_provider() {
     let config = Config {
         default_provider: Some("deepseek".into()),
-        default_model: Some("deepseek-chat".into()),
+        default_model: Some("synthetic-model-018".into()),
         default_temperature: 0.5,
         ..Config::default()
     };
@@ -161,7 +160,7 @@ fn config_toml_roundtrip_preserves_provider() {
     let parsed: Config = toml::from_str(&toml_str).expect("TOML should deserialize back");
 
     assert_eq!(parsed.default_provider.as_deref(), Some("deepseek"));
-    assert_eq!(parsed.default_model.as_deref(), Some("deepseek-chat"));
+    assert_eq!(parsed.default_model.as_deref(), Some("synthetic-model-018"));
     assert!((parsed.default_temperature - 0.5).abs() < f64::EPSILON);
 }
 
@@ -184,7 +183,7 @@ fn config_toml_roundtrip_preserves_agent_config() {
 fn config_toml_roundtrip_preserves_memory_config() {
     let mut config = Config::default();
     config.memory.embedding_provider = "openai".into();
-    config.memory.embedding_model = "text-embedding-3-small".into();
+    config.memory.embedding_model = "synthetic-embedding-model".into();
     config.memory.vector_weight = 0.8;
     config.memory.keyword_weight = 0.2;
 
@@ -192,7 +191,7 @@ fn config_toml_roundtrip_preserves_memory_config() {
     let parsed: Config = toml::from_str(&toml_str).expect("TOML should deserialize back");
 
     assert_eq!(parsed.memory.embedding_provider, "openai");
-    assert_eq!(parsed.memory.embedding_model, "text-embedding-3-small");
+    assert_eq!(parsed.memory.embedding_model, "synthetic-embedding-model");
     assert!((parsed.memory.vector_weight - 0.8).abs() < f64::EPSILON);
     assert!((parsed.memory.keyword_weight - 0.2).abs() < f64::EPSILON);
 }
@@ -208,7 +207,7 @@ fn config_file_write_read_roundtrip() {
 
     let mut config = Config {
         default_provider: Some("mistral".into()),
-        default_model: Some("mistral-large".into()),
+        default_model: Some("synthetic-fallback-model".into()),
         ..Config::default()
     };
     config.agent.max_tool_iterations = 15;
@@ -220,7 +219,10 @@ fn config_file_write_read_roundtrip() {
     let parsed: Config = toml::from_str(&read_back).expect("TOML should parse back");
 
     assert_eq!(parsed.default_provider.as_deref(), Some("mistral"));
-    assert_eq!(parsed.default_model.as_deref(), Some("mistral-large"));
+    assert_eq!(
+        parsed.default_model.as_deref(),
+        Some("synthetic-fallback-model")
+    );
     assert_eq!(parsed.agent.max_tool_iterations, 15);
 }
 

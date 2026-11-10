@@ -50,7 +50,7 @@ def _build_parser() -> argparse.ArgumentParser:
         nargs="*",
         help="Message to send to the agent (optional in interactive mode)",
     )
-    parser.add_argument("--model", "-m", default="glm-5", help="Model to use")
+    parser.add_argument("--model", "-m", default=None, help="Explicit model ID (or set GLOAMY_MODEL)")
     parser.add_argument("--api-key", "-k", default=None, help="API key")
     parser.add_argument("--base-url", "-u", default=None, help="API base URL")
     parser.add_argument("--interactive", "-i", action="store_true", help="Interactive mode")

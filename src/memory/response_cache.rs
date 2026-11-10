@@ -8,7 +8,7 @@
 use anyhow::Result;
 use chrono::{Duration, Local};
 use parking_lot::Mutex;
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 
@@ -183,40 +183,45 @@ mod tests {
 
     #[test]
     fn cache_key_deterministic() {
-        let k1 = ResponseCache::cache_key("gpt-4", Some("sys"), "hello");
-        let k2 = ResponseCache::cache_key("gpt-4", Some("sys"), "hello");
+        let k1 = ResponseCache::cache_key("synthetic-model-032", Some("sys"), "hello");
+        let k2 = ResponseCache::cache_key("synthetic-model-032", Some("sys"), "hello");
         assert_eq!(k1, k2);
         assert_eq!(k1.len(), 64); // SHA-256 hex
     }
 
     #[test]
     fn cache_key_varies_by_model() {
-        let k1 = ResponseCache::cache_key("gpt-4", None, "hello");
-        let k2 = ResponseCache::cache_key("claude-3", None, "hello");
+        let k1 = ResponseCache::cache_key("synthetic-model-032", None, "hello");
+        let k2 = ResponseCache::cache_key("synthetic-model-001", None, "hello");
         assert_ne!(k1, k2);
     }
 
     #[test]
     fn cache_key_varies_by_system_prompt() {
-        let k1 = ResponseCache::cache_key("gpt-4", Some("You are helpful"), "hello");
-        let k2 = ResponseCache::cache_key("gpt-4", Some("You are rude"), "hello");
+        let k1 = ResponseCache::cache_key("synthetic-model-032", Some("You are helpful"), "hello");
+        let k2 = ResponseCache::cache_key("synthetic-model-032", Some("You are rude"), "hello");
         assert_ne!(k1, k2);
     }
 
     #[test]
     fn cache_key_varies_by_prompt() {
-        let k1 = ResponseCache::cache_key("gpt-4", None, "hello");
-        let k2 = ResponseCache::cache_key("gpt-4", None, "goodbye");
+        let k1 = ResponseCache::cache_key("synthetic-model-032", None, "hello");
+        let k2 = ResponseCache::cache_key("synthetic-model-032", None, "goodbye");
         assert_ne!(k1, k2);
     }
 
     #[test]
     fn put_and_get() {
         let (_tmp, cache) = temp_cache(60);
-        let key = ResponseCache::cache_key("gpt-4", None, "What is Rust?");
+        let key = ResponseCache::cache_key("synthetic-model-032", None, "What is Rust?");
 
         cache
-            .put(&key, "gpt-4", "Rust is a systems programming language.", 25)
+            .put(
+                &key,
+                "synthetic-model-032",
+                "Rust is a systems programming language.",
+                25,
+            )
             .unwrap();
 
         let result = cache.get(&key).unwrap();
@@ -236,9 +241,11 @@ mod tests {
     #[test]
     fn expired_entry_returns_none() {
         let (_tmp, cache) = temp_cache(0); // 0-minute TTL → everything is instantly expired
-        let key = ResponseCache::cache_key("gpt-4", None, "test");
+        let key = ResponseCache::cache_key("synthetic-model-032", None, "test");
 
-        cache.put(&key, "gpt-4", "response", 10).unwrap();
+        cache
+            .put(&key, "synthetic-model-032", "response", 10)
+            .unwrap();
 
         // The entry was created with created_at = now(), but TTL is 0 minutes,
         // so cutoff = now() - 0 = now(). The entry's created_at is NOT > cutoff.
@@ -249,9 +256,9 @@ mod tests {
     #[test]
     fn hit_count_incremented() {
         let (_tmp, cache) = temp_cache(60);
-        let key = ResponseCache::cache_key("gpt-4", None, "hello");
+        let key = ResponseCache::cache_key("synthetic-model-032", None, "hello");
 
-        cache.put(&key, "gpt-4", "Hi!", 5).unwrap();
+        cache.put(&key, "synthetic-model-032", "Hi!", 5).unwrap();
 
         // 3 hits
         for _ in 0..3 {
@@ -265,9 +272,11 @@ mod tests {
     #[test]
     fn tokens_saved_calculated() {
         let (_tmp, cache) = temp_cache(60);
-        let key = ResponseCache::cache_key("gpt-4", None, "explain rust");
+        let key = ResponseCache::cache_key("synthetic-model-032", None, "explain rust");
 
-        cache.put(&key, "gpt-4", "Rust is...", 100).unwrap();
+        cache
+            .put(&key, "synthetic-model-032", "Rust is...", 100)
+            .unwrap();
 
         // 5 cache hits × 100 tokens = 500 tokens saved
         for _ in 0..5 {
@@ -284,9 +293,9 @@ mod tests {
         let cache = ResponseCache::new(tmp.path(), 60, 3).unwrap(); // max 3 entries
 
         for i in 0..5 {
-            let key = ResponseCache::cache_key("gpt-4", None, &format!("prompt {i}"));
+            let key = ResponseCache::cache_key("synthetic-model-032", None, &format!("prompt {i}"));
             cache
-                .put(&key, "gpt-4", &format!("response {i}"), 10)
+                .put(&key, "synthetic-model-032", &format!("response {i}"), 10)
                 .unwrap();
         }
 
@@ -299,9 +308,9 @@ mod tests {
         let (_tmp, cache) = temp_cache(60);
 
         for i in 0..10 {
-            let key = ResponseCache::cache_key("gpt-4", None, &format!("prompt {i}"));
+            let key = ResponseCache::cache_key("synthetic-model-032", None, &format!("prompt {i}"));
             cache
-                .put(&key, "gpt-4", &format!("response {i}"), 10)
+                .put(&key, "synthetic-model-032", &format!("response {i}"), 10)
                 .unwrap();
         }
 
@@ -324,10 +333,14 @@ mod tests {
     #[test]
     fn overwrite_same_key() {
         let (_tmp, cache) = temp_cache(60);
-        let key = ResponseCache::cache_key("gpt-4", None, "question");
+        let key = ResponseCache::cache_key("synthetic-model-032", None, "question");
 
-        cache.put(&key, "gpt-4", "answer v1", 20).unwrap();
-        cache.put(&key, "gpt-4", "answer v2", 25).unwrap();
+        cache
+            .put(&key, "synthetic-model-032", "answer v1", 20)
+            .unwrap();
+        cache
+            .put(&key, "synthetic-model-032", "answer v2", 25)
+            .unwrap();
 
         let result = cache.get(&key).unwrap();
         assert_eq!(result.as_deref(), Some("answer v2"));
@@ -339,10 +352,10 @@ mod tests {
     #[test]
     fn unicode_prompt_handling() {
         let (_tmp, cache) = temp_cache(60);
-        let key = ResponseCache::cache_key("gpt-4", None, "日本語のテスト 🦀");
+        let key = ResponseCache::cache_key("synthetic-model-032", None, "日本語のテスト 🦀");
 
         cache
-            .put(&key, "gpt-4", "はい、Rustは素晴らしい", 30)
+            .put(&key, "synthetic-model-032", "はい、Rustは素晴らしい", 30)
             .unwrap();
 
         let result = cache.get(&key).unwrap();
@@ -358,19 +371,21 @@ mod tests {
 
         // Insert 3 entries
         for i in 0..3 {
-            let key = ResponseCache::cache_key("gpt-4", None, &format!("prompt {i}"));
+            let key = ResponseCache::cache_key("synthetic-model-032", None, &format!("prompt {i}"));
             cache
-                .put(&key, "gpt-4", &format!("response {i}"), 10)
+                .put(&key, "synthetic-model-032", &format!("response {i}"), 10)
                 .unwrap();
         }
 
         // Access entry 0 to make it recently used
-        let key0 = ResponseCache::cache_key("gpt-4", None, "prompt 0");
+        let key0 = ResponseCache::cache_key("synthetic-model-032", None, "prompt 0");
         let _ = cache.get(&key0).unwrap();
 
         // Insert entry 3 (triggers eviction)
-        let key3 = ResponseCache::cache_key("gpt-4", None, "prompt 3");
-        cache.put(&key3, "gpt-4", "response 3", 10).unwrap();
+        let key3 = ResponseCache::cache_key("synthetic-model-032", None, "prompt 3");
+        cache
+            .put(&key3, "synthetic-model-032", "response 3", 10)
+            .unwrap();
 
         let (count, _, _) = cache.stats().unwrap();
         assert!(count <= 3, "cache must not exceed max_entries");
@@ -388,9 +403,11 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let cache = ResponseCache::new(tmp.path(), 60, 0).unwrap();
 
-        let key = ResponseCache::cache_key("gpt-4", None, "test");
+        let key = ResponseCache::cache_key("synthetic-model-032", None, "test");
         // Should not panic even with max_entries=0
-        cache.put(&key, "gpt-4", "response", 10).unwrap();
+        cache
+            .put(&key, "synthetic-model-032", "response", 10)
+            .unwrap();
 
         let (count, _, _) = cache.stats().unwrap();
         assert_eq!(count, 0, "cache with max_entries=0 should evict everything");
@@ -401,8 +418,10 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let cache = std::sync::Arc::new(ResponseCache::new(tmp.path(), 60, 100).unwrap());
 
-        let key = ResponseCache::cache_key("gpt-4", None, "concurrent");
-        cache.put(&key, "gpt-4", "response", 10).unwrap();
+        let key = ResponseCache::cache_key("synthetic-model-032", None, "concurrent");
+        cache
+            .put(&key, "synthetic-model-032", "response", 10)
+            .unwrap();
 
         let mut handles = Vec::new();
         for _ in 0..10 {

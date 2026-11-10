@@ -197,6 +197,7 @@ fn tool_response(calls: Vec<ToolCall>) -> ChatResponse {
 
 fn build_agent(provider: Box<dyn Provider>, tools: Vec<Box<dyn Tool>>) -> Agent {
     Agent::builder()
+        .model_name("synthetic-model".into())
         .provider(provider)
         .tools(tools)
         .memory(make_memory())

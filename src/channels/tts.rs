@@ -162,7 +162,7 @@ mod tests {
             enabled: true,
             api_key: None,
             api_url,
-            model: "tts-1".into(),
+            model: "synthetic-speech-model".into(),
             voice: "alloy".into(),
             response_format: "opus".into(),
             max_input_chars: 32,
@@ -185,8 +185,7 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn synthesize_speech_rejects_missing_api_key() {
         let _tts_key_override = crate::environment::test::scoped_remove_var("TTS_API_KEY");
-        let _openai_key_override =
-            crate::environment::test::scoped_remove_var("OPENAI_API_KEY");
+        let _openai_key_override = crate::environment::test::scoped_remove_var("OPENAI_API_KEY");
         let _groq_key_override = crate::environment::test::scoped_remove_var("GROQ_API_KEY");
 
         let error = synthesize_speech("hello", &TtsConfig::default(), None)

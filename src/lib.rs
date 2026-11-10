@@ -85,6 +85,7 @@ pub(crate) mod identity;
 pub(crate) mod integrations;
 pub mod memory;
 pub(crate) mod migration;
+pub mod model_catalog;
 pub(crate) mod multimodal;
 pub mod observability;
 pub(crate) mod onboard;

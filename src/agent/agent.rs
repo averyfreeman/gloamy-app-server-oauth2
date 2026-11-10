@@ -259,9 +259,9 @@ impl AgentBuilder {
                 .memory_loader
                 .unwrap_or_else(|| Box::new(DefaultMemoryLoader::default())),
             config: self.config.unwrap_or_default(),
-            model_name: self
-                .model_name
-                .unwrap_or_else(|| "anthropic/claude-sonnet-4-20250514".into()),
+            model_name: self.model_name.ok_or_else(|| {
+                anyhow::anyhow!("model_name is required; discover or enter a model ID")
+            })?,
             temperature: self.temperature.unwrap_or(0.7),
             workspace_dir: self
                 .workspace_dir
@@ -496,11 +496,10 @@ impl Agent {
 
         let provider_name = config.default_provider.as_deref().unwrap_or("openai");
 
-        let model_name = config
-            .default_model
-            .as_deref()
-            .unwrap_or("anthropic/claude-sonnet-4-20250514")
-            .to_string();
+        let model_name = crate::model_catalog::require_model(
+            crate::providers::canonical_provider_name(provider_name),
+            config.default_model.as_deref(),
+        )?;
 
         let provider: Box<dyn Provider> = providers::create_routed_provider(
             provider_name,
@@ -1271,11 +1270,10 @@ pub async fn run(
         .as_deref()
         .unwrap_or("openai")
         .to_string();
-    let model_name = effective_config
-        .default_model
-        .as_deref()
-        .unwrap_or("anthropic/claude-sonnet-4-20250514")
-        .to_string();
+    let model_name = crate::model_catalog::require_model(
+        crate::providers::canonical_provider_name(&provider_name),
+        effective_config.default_model.as_deref(),
+    )?;
 
     agent.observer.record_event(&ObserverEvent::AgentStart {
         provider: provider_name.clone(),
@@ -1506,6 +1504,7 @@ mod tests {
 
         let observer: Arc<dyn Observer> = Arc::from(crate::observability::NoopObserver {});
         let mut agent = Agent::builder()
+            .model_name("synthetic-model".into())
             .provider(provider)
             .tools(vec![Box::new(MockTool)])
             .memory(mem)
@@ -1553,6 +1552,7 @@ mod tests {
 
         let observer: Arc<dyn Observer> = Arc::from(crate::observability::NoopObserver {});
         let mut agent = Agent::builder()
+            .model_name("synthetic-model".into())
             .provider(provider)
             .tools(vec![Box::new(MockTool)])
             .memory(mem)
@@ -1564,10 +1564,12 @@ mod tests {
 
         let response = agent.turn("hi").await.unwrap();
         assert_eq!(response, "done");
-        assert!(agent
-            .history()
-            .iter()
-            .any(|msg| matches!(msg, ConversationMessage::ToolResults(_))));
+        assert!(
+            agent
+                .history()
+                .iter()
+                .any(|msg| matches!(msg, ConversationMessage::ToolResults(_)))
+        );
     }
 
     #[tokio::test]
@@ -1602,6 +1604,7 @@ mod tests {
 
         let observer: Arc<dyn Observer> = Arc::from(crate::observability::NoopObserver {});
         let mut agent = Agent::builder()
+            .model_name("synthetic-model".into())
             .provider(provider)
             .tools(vec![Box::new(FailingMockTool)])
             .memory(mem)
@@ -1649,8 +1652,12 @@ mod tests {
 
         let observer: Arc<dyn Observer> = Arc::from(crate::observability::NoopObserver {});
         let mut route_model_by_hint = HashMap::new();
-        route_model_by_hint.insert("fast".to_string(), "anthropic/claude-haiku-4-5".to_string());
+        route_model_by_hint.insert(
+            "fast".to_string(),
+            "anthropic/synthetic-model-007".to_string(),
+        );
         let mut agent = Agent::builder()
+            .model_name("synthetic-model".into())
             .provider(provider)
             .tools(vec![Box::new(MockTool)])
             .memory(mem)
@@ -1758,9 +1765,10 @@ mod tests {
         let mut msgs = vec![ChatMessage::system("sys"), ChatMessage::user(huge)];
         Agent::enforce_context_budget(&mut msgs, 500);
         let user = msgs.iter().find(|m| m.role == "user").unwrap();
-        assert!(user
-            .content
-            .contains("[…content truncated to fit context budget…]"));
+        assert!(
+            user.content
+                .contains("[…content truncated to fit context budget…]")
+        );
         let total: usize = msgs.iter().map(|m| m.content.len()).sum();
         assert!(total <= 500 + 100);
     }
@@ -1863,6 +1871,7 @@ mod tests {
 
         let observer: Arc<dyn Observer> = Arc::from(crate::observability::NoopObserver {});
         let mut agent = Agent::builder()
+            .model_name("synthetic-model".into())
             .provider(provider)
             .tools(vec![Box::new(MockTool)])
             .memory(mem)

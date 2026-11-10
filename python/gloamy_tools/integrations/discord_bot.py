@@ -46,7 +46,7 @@ class DiscordBot:
         allowed_users: list[str],
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
-        model: str = "glm-5",
+        model: Optional[str] = None,
         prefix: str = "",
     ):
         if not DISCORD_AVAILABLE:
