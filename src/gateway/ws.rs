@@ -90,6 +90,17 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
             }
         };
 
+        let provider = match super::provider_for_request(&state) {
+            Ok(provider) => provider,
+            Err(_) => {
+                let response = serde_json::json!({"type":"error", "message":"Unable to initialize the configured provider"});
+                let _ = sender
+                    .send(Message::Text(response.to_string().into()))
+                    .await;
+                continue;
+            }
+        };
+
         // Process message with the LLM provider
         let provider_label = state
             .config
@@ -139,8 +150,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                 }
             };
 
-        match state
-            .provider
+        match provider
             .chat_with_history(&prepared.messages, &state.model, state.temperature)
             .await
         {

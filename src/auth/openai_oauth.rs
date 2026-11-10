@@ -7,21 +7,24 @@ use chrono::Utc;
 use reqwest::Client;
 use serde::Deserialize;
 use std::collections::BTreeMap;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
 // Re-export for external use (used by main.rs)
 #[allow(unused_imports)]
-pub use crate::auth::oauth_common::{generate_pkce_state, PkceState};
+pub use crate::auth::oauth_common::{PkceState, generate_pkce_state};
 
 pub const OPENAI_OAUTH_CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
 pub const OPENAI_OAUTH_AUTHORIZE_URL: &str = "https://auth.openai.com/oauth/authorize";
 pub const OPENAI_OAUTH_TOKEN_URL: &str = "https://auth.openai.com/oauth/token";
-pub const OPENAI_OAUTH_DEVICE_CODE_URL: &str = "https://auth.openai.com/oauth/device/code";
+pub const OPENAI_OAUTH_DEVICE_CODE_URL: &str =
+    "https://auth.openai.com/api/accounts/deviceauth/usercode";
+const OPENAI_DEVICE_POLL_URL: &str = "https://auth.openai.com/api/accounts/deviceauth/token";
+const OPENAI_DEVICE_CALLBACK: &str = "https://auth.openai.com/deviceauth/callback";
 pub const OPENAI_OAUTH_REDIRECT_URI: &str = "http://localhost:1455/auth/callback";
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct DeviceCodeStart {
     pub device_code: String,
     pub user_code: String,
@@ -30,6 +33,15 @@ pub struct DeviceCodeStart {
     pub expires_in: u64,
     pub interval: u64,
     pub message: Option<String>,
+}
+
+impl std::fmt::Debug for DeviceCodeStart {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DeviceCodeStart")
+            .field("expires_in", &self.expires_in)
+            .field("interval", &self.interval)
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -49,23 +61,41 @@ struct TokenResponse {
 
 #[derive(Debug, Deserialize)]
 struct DeviceCodeResponse {
-    device_code: String,
+    device_auth_id: String,
+    #[serde(alias = "usercode")]
     user_code: String,
-    verification_uri: String,
-    #[serde(default)]
-    verification_uri_complete: Option<String>,
-    expires_in: u64,
-    #[serde(default)]
-    interval: Option<u64>,
-    #[serde(default)]
-    message: Option<String>,
+    #[serde(
+        default = "default_device_interval",
+        deserialize_with = "device_interval"
+    )]
+    interval: u64,
 }
 
-#[derive(Debug, Deserialize)]
-struct OAuthErrorResponse {
-    error: String,
-    #[serde(default)]
-    error_description: Option<String>,
+#[derive(Deserialize)]
+struct DeviceAuthorization {
+    authorization_code: String,
+    code_verifier: String,
+}
+
+fn default_device_interval() -> u64 {
+    5
+}
+
+fn device_interval<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<u64, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Interval {
+        Seconds(u64),
+        Text(String),
+    }
+    match Interval::deserialize(deserializer)? {
+        Interval::Seconds(value) => Ok(value.max(1)),
+        Interval::Text(value) => value
+            .trim()
+            .parse::<u64>()
+            .map(|value| value.max(1))
+            .map_err(|_| serde::de::Error::custom("invalid device polling interval")),
+    }
 }
 
 pub fn build_authorize_url(pkce: &PkceState) -> String {
@@ -93,16 +123,33 @@ pub async fn exchange_code_for_tokens(
     code: &str,
     pkce: &PkceState,
 ) -> Result<TokenSet> {
+    exchange_code_for_tokens_at(
+        client,
+        OPENAI_OAUTH_TOKEN_URL,
+        code,
+        &pkce.code_verifier,
+        OPENAI_OAUTH_REDIRECT_URI,
+    )
+    .await
+}
+
+async fn exchange_code_for_tokens_at(
+    client: &Client,
+    token_url: &str,
+    code: &str,
+    verifier: &str,
+    redirect_uri: &str,
+) -> Result<TokenSet> {
     let form = [
         ("grant_type", "authorization_code"),
         ("code", code),
         ("client_id", OPENAI_OAUTH_CLIENT_ID),
-        ("redirect_uri", OPENAI_OAUTH_REDIRECT_URI),
-        ("code_verifier", pkce.code_verifier.as_str()),
+        ("redirect_uri", redirect_uri),
+        ("code_verifier", verifier),
     ];
 
     let response = client
-        .post(OPENAI_OAUTH_TOKEN_URL)
+        .post(token_url)
         .form(&form)
         .send()
         .await
@@ -129,37 +176,40 @@ pub async fn refresh_access_token(client: &Client, refresh_token: &str) -> Resul
 }
 
 pub async fn start_device_code_flow(client: &Client) -> Result<DeviceCodeStart> {
-    let form = [
-        ("client_id", OPENAI_OAUTH_CLIENT_ID),
-        ("scope", "openid profile email offline_access"),
-    ];
+    start_device_code_flow_at(client, OPENAI_OAUTH_DEVICE_CODE_URL).await
+}
 
+// Current first-party protocol: deviceauth/usercode -> deviceauth/token ->
+// OAuth authorization-code exchange. Never expose the private authorization ID
+// or verifier to the browser. See docs/codex-oauth-sources.md.
+async fn start_device_code_flow_at(client: &Client, endpoint: &str) -> Result<DeviceCodeStart> {
     let response = client
-        .post(OPENAI_OAUTH_DEVICE_CODE_URL)
-        .form(&form)
+        .post(endpoint)
+        .json(&serde_json::json!({"client_id": OPENAI_OAUTH_CLIENT_ID}))
         .send()
         .await
-        .context("Failed to start OpenAI OAuth device-code flow")?;
-
+        .context("Failed to start OpenAI device authorization")?;
     if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        anyhow::bail!("OpenAI device-code start failed ({status}): {body}");
+        anyhow::bail!(
+            "OpenAI device authorization start failed ({})",
+            response.status()
+        );
     }
-
     let parsed: DeviceCodeResponse = response
         .json()
         .await
-        .context("Failed to parse OpenAI device-code response")?;
-
+        .context("Invalid OpenAI device authorization response")?;
+    if parsed.device_auth_id.trim().is_empty() || parsed.user_code.trim().is_empty() {
+        anyhow::bail!("OpenAI returned incomplete device authorization");
+    }
     Ok(DeviceCodeStart {
-        device_code: parsed.device_code,
+        device_code: parsed.device_auth_id,
         user_code: parsed.user_code,
-        verification_uri: parsed.verification_uri,
-        verification_uri_complete: parsed.verification_uri_complete,
-        expires_in: parsed.expires_in,
-        interval: parsed.interval.unwrap_or(5).max(1),
-        message: parsed.message,
+        verification_uri: "https://auth.openai.com/codex/device".into(),
+        verification_uri_complete: None,
+        expires_in: 15 * 60,
+        interval: parsed.interval.max(1),
+        message: None,
     })
 }
 
@@ -167,62 +217,58 @@ pub async fn poll_device_code_tokens(
     client: &Client,
     device: &DeviceCodeStart,
 ) -> Result<TokenSet> {
-    let started = Instant::now();
-    let mut interval_secs = device.interval.max(1);
+    poll_device_code_tokens_at(
+        client,
+        device,
+        OPENAI_DEVICE_POLL_URL,
+        OPENAI_OAUTH_TOKEN_URL,
+    )
+    .await
+}
 
-    loop {
-        if started.elapsed() > Duration::from_secs(device.expires_in) {
-            anyhow::bail!("Device-code flow timed out before authorization completed");
-        }
-
-        tokio::time::sleep(Duration::from_secs(interval_secs)).await;
-
-        let form = [
-            ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
-            ("device_code", device.device_code.as_str()),
-            ("client_id", OPENAI_OAUTH_CLIENT_ID),
-        ];
-
-        let response = client
-            .post(OPENAI_OAUTH_TOKEN_URL)
-            .form(&form)
-            .send()
-            .await
-            .context("Failed polling OpenAI device-code token endpoint")?;
-
-        if response.status().is_success() {
-            return parse_token_response(response).await;
-        }
-
-        let status = response.status();
-        let text = response.text().await.unwrap_or_default();
-
-        if let Ok(err) = serde_json::from_str::<OAuthErrorResponse>(&text) {
-            match err.error.as_str() {
-                "authorization_pending" => {
-                    continue;
-                }
-                "slow_down" => {
-                    interval_secs = interval_secs.saturating_add(5);
-                    continue;
-                }
-                "access_denied" => {
-                    anyhow::bail!("OpenAI device-code authorization was denied")
-                }
-                "expired_token" => {
-                    anyhow::bail!("OpenAI device-code expired")
-                }
-                _ => {
-                    anyhow::bail!(
-                        "OpenAI device-code polling failed ({status}): {}",
-                        err.error_description.unwrap_or(err.error)
-                    )
-                }
+async fn poll_device_code_tokens_at(
+    client: &Client,
+    device: &DeviceCodeStart,
+    poll_url: &str,
+    token_url: &str,
+) -> Result<TokenSet> {
+    let lifetime = Duration::from_secs(device.expires_in.min(15 * 60));
+    tokio::time::timeout(lifetime, async {
+        loop {
+            let response = client
+                .post(poll_url)
+                .json(&serde_json::json!({
+                    "device_auth_id": device.device_code,
+                    "user_code": device.user_code,
+                }))
+                .send()
+                .await
+                .context("Failed polling OpenAI device authorization")?;
+            let status = response.status();
+            if status.is_success() {
+                let authorization: DeviceAuthorization = response
+                    .json()
+                    .await
+                    .context("Invalid OpenAI device authorization result")?;
+                return exchange_code_for_tokens_at(
+                    client,
+                    token_url,
+                    &authorization.authorization_code,
+                    &authorization.code_verifier,
+                    OPENAI_DEVICE_CALLBACK,
+                )
+                .await;
             }
+            if status == reqwest::StatusCode::FORBIDDEN || status == reqwest::StatusCode::NOT_FOUND
+            {
+                tokio::time::sleep(Duration::from_secs(device.interval.max(1))).await;
+                continue;
+            }
+            anyhow::bail!("OpenAI device authorization failed ({status})");
         }
-
-        anyhow::bail!("OpenAI device-code polling failed ({status}): {text}");
-    }
+    })
+    .await
+    .context("Device authorization expired")?
 }
 
 pub async fn receive_loopback_code(expected_state: &str, timeout: Duration) -> Result<String> {
@@ -321,11 +367,18 @@ pub fn extract_account_id_from_jwt(token: &str) -> Option<String> {
         .ok()?;
     let claims: serde_json::Value = serde_json::from_slice(&decoded).ok()?;
 
+    if let Some(account) = claims
+        .pointer("/https:~1~1api.openai.com~1auth/chatgpt_account_id")
+        .and_then(serde_json::Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+    {
+        return Some(account.to_string());
+    }
+
     for key in [
         "account_id",
         "accountId",
         "acct",
-        "sub",
         "https://api.openai.com/account_id",
     ] {
         if let Some(value) = claims.get(key).and_then(|v| v.as_str()) {
@@ -341,8 +394,7 @@ pub fn extract_account_id_from_jwt(token: &str) -> Option<String> {
 async fn parse_token_response(response: reqwest::Response) -> Result<TokenSet> {
     if !response.status().is_success() {
         let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        anyhow::bail!("OpenAI OAuth token request failed ({status}): {body}");
+        anyhow::bail!("OpenAI OAuth token request failed ({status})");
     }
 
     let token: TokenResponse = response
@@ -409,9 +461,10 @@ mod tests {
             Some("xyz"),
         )
         .unwrap_err();
-        assert!(err
-            .to_string()
-            .contains("OpenAI OAuth error: access_denied"));
+        assert!(
+            err.to_string()
+                .contains("OpenAI OAuth error: access_denied")
+        );
     }
 
     #[test]
@@ -423,5 +476,125 @@ mod tests {
 
         let account = extract_account_id_from_jwt(&token);
         assert_eq!(account.as_deref(), Some("acct_123"));
+    }
+
+    #[test]
+    fn chatgpt_account_claim_precedes_user_subject_and_debug_omits_secrets() {
+        let header = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode("{}");
+        let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(
+            r#"{"sub":"fixture-user","https://api.openai.com/auth":{"chatgpt_account_id":"fixture-account"}}"#,
+        );
+        assert_eq!(
+            extract_account_id_from_jwt(&format!("{header}.{payload}.sig")).as_deref(),
+            Some("fixture-account")
+        );
+        let subject =
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(r#"{"sub":"fixture-user"}"#);
+        assert!(extract_account_id_from_jwt(&format!("{header}.{subject}.sig")).is_none());
+        let device = DeviceCodeStart {
+            device_code: "fixture-private-device".into(),
+            user_code: "ABCD-EFGH".into(),
+            verification_uri: "https://auth.openai.com/codex/device".into(),
+            verification_uri_complete: None,
+            expires_in: 60,
+            interval: 5,
+            message: None,
+        };
+        let debug = format!("{device:?}");
+        assert!(!debug.contains("fixture-private-device"));
+        assert!(!debug.contains("ABCD-EFGH"));
+        let tokens = TokenSet {
+            access_token: "fixture-private-access".into(),
+            refresh_token: Some("fixture-private-refresh".into()),
+            id_token: None,
+            expires_at: None,
+            token_type: None,
+            scope: None,
+        };
+        let debug = format!("{tokens:?}");
+        assert!(!debug.contains("fixture-private-access"));
+        assert!(!debug.contains("fixture-private-refresh"));
+    }
+
+    #[tokio::test]
+    async fn token_error_never_echoes_response_payload() {
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(400)
+                    .set_body_string("fixture-private-access fixture-private-refresh"),
+            )
+            .mount(&server)
+            .await;
+        let response = Client::new().get(server.uri()).send().await.unwrap();
+        let error = parse_token_response(response)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(!error.contains("fixture-private-access"));
+        assert!(!error.contains("fixture-private-refresh"));
+        assert!(error.contains("400"));
+    }
+
+    #[tokio::test]
+    async fn device_protocol_requests_user_code_polls_and_exchanges_authorization() {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        };
+        use wiremock::{
+            Mock, MockServer, ResponseTemplate,
+            matchers::{body_json, body_string_contains, method, path},
+        };
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/usercode"))
+            .and(body_json(
+                serde_json::json!({"client_id": OPENAI_OAUTH_CLIENT_ID}),
+            ))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "device_auth_id":"fixture-private-device", "user_code":"ABCD-EFGH", "interval":"1"
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let polls = Arc::new(AtomicUsize::new(0));
+        let calls = Arc::clone(&polls);
+        Mock::given(method("POST")).and(path("/device-token"))
+            .and(body_json(serde_json::json!({"device_auth_id":"fixture-private-device", "user_code":"ABCD-EFGH"})))
+            .respond_with(move |_: &wiremock::Request| {
+                if calls.fetch_add(1, Ordering::SeqCst) == 0 { ResponseTemplate::new(403) }
+                else { ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "authorization_code":"fixture-code", "code_verifier":"fixture-verifier", "code_challenge":"fixture-challenge"
+                })) }
+            }).expect(2).mount(&server).await;
+        Mock::given(method("POST")).and(path("/oauth-token"))
+            .and(body_string_contains("grant_type=authorization_code"))
+            .and(body_string_contains("code_verifier=fixture-verifier"))
+            .and(body_string_contains("redirect_uri=https%3A%2F%2Fauth.openai.com%2Fdeviceauth%2Fcallback"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "access_token":"fixture-access", "refresh_token":"fixture-refresh", "expires_in":3600
+            }))).expect(1).mount(&server).await;
+        let client = Client::new();
+        let device = start_device_code_flow_at(&client, &format!("{}/usercode", server.uri()))
+            .await
+            .unwrap();
+        assert_eq!(device.user_code, "ABCD-EFGH");
+        assert_eq!(device.interval, 1);
+        assert_eq!(
+            device.verification_uri,
+            "https://auth.openai.com/codex/device"
+        );
+        let tokens = poll_device_code_tokens_at(
+            &client,
+            &device,
+            &format!("{}/device-token", server.uri()),
+            &format!("{}/oauth-token", server.uri()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(tokens.access_token, "fixture-access");
+        assert_eq!(tokens.refresh_token.as_deref(), Some("fixture-refresh"));
+        assert_eq!(polls.load(Ordering::SeqCst), 2);
     }
 }

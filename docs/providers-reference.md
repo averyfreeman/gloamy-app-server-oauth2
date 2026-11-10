@@ -90,6 +90,16 @@ credential is not reused for fallback providers.
 - Gemini CLI OAuth requests use `cloudcode-pa.googleapis.com/v1internal` with Code Assist request envelope semantics
 - Thinking models are supported — internal reasoning parts are automatically filtered from the response
 
+### OpenAI Codex from Integrations
+
+Open **Integrations → OpenAI Codex → Connect with ChatGPT** to authorize the existing `openai-codex` provider using your ChatGPT account. This is separate from the OpenAI API-key card and from the locally installed `codex-app-server` provider. Follow the displayed official verification URL and user code; the daemon polls authorization and stores successful credentials through AuthService in encrypted auth profiles.
+
+Connection status does not depend on which provider is default. Signing in preserves global provider/model selection. After connection, choose an account-discovered model, an eligible shared-catalog choice, or an explicit custom ID. Applying a model changes `default_model` when Codex is already default; otherwise explicitly select **Use Codex as default** before applying. Routes, fallbacks, personalization, other auth profiles, API keys, and unrelated config remain intact.
+
+Account discovery is best-effort against the Codex backend used by official Codex source. Its third-party compatibility is not a public API guarantee; rejected, empty, timed-out, or malformed results fall back to the shared catalog and custom input. Catalog fallback does not establish account entitlement. No OpenAI API token prices are inferred for subscription OAuth. See [source verification](codex-oauth-sources.md) and [setup API](gateway-api-reference.md#codex-oauth-integration-setup).
+
+Codex OAuth tokens remain encrypted during later auth-store rewrites, including when the general config secret setting is disabled. Existing unrelated profiles and active-provider namespaces are preserved. Closing or cancelling a pending dialog requests cancellation; if the daemon cannot be reached, the flow can still finish until its server-side deadline.
+
 ### Codex App Server Notes
 
 - Provider ID: `codex-app-server` (separate from `openai-codex` and its Gloamy OAuth profiles).

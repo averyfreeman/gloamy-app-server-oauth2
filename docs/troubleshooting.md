@@ -363,6 +363,17 @@ gloamy channel doctor
 
 Also include OS, install method, and sanitized config snippets (no secrets).
 
+## Codex OAuth Setup in Integrations
+
+- **The OpenAI API card does not start ChatGPT sign-in:** choose **OpenAI Codex**, which uses ChatGPT OAuth. Other cards and skills without implemented setup remain noninteractive.
+- **Authorization expired or was denied:** start a new flow. The daemon owns device-code polling and expiry; refreshing the page does not extend the deadline. Reconnect when credentials have been revoked.
+- **Cancellation could not reach the daemon:** the dialog reports that cancellation is unconfirmed. Retry or inspect status; the server flow can still finish before its deadline. Cancellation after credential persistence starts cannot undo a successful connection.
+- **OAuth succeeded but credential save failed:** the flow reports an error, not connected success. Repair local auth-directory permissions or storage availability and retry; do not move tokens into browser storage or config text.
+- **Model discovery is unavailable:** curated fallback and custom IDs remain available. The Codex backend may reject a compatibility version/originator or vary by account. Public OpenAI `/v1/models` is not a ChatGPT OAuth fallback, and a separate local Codex CLI login may be a different account.
+- **Applying a model leaves the provider unchanged:** connection alone preserves selection. Select **Use Codex as default** before switching from another provider. If a global API URL override is configured, remove it explicitly in Configuration before switching; unrelated values are preserved.
+
+See [verified sources and limitations](codex-oauth-sources.md) and [setup API states](gateway-api-reference.md#codex-oauth-integration-setup).
+
 ## Related Docs
 
 - [operations-runbook.md](operations-runbook.md)

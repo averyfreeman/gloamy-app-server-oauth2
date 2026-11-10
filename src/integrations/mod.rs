@@ -60,6 +60,8 @@ impl IntegrationCategory {
 
 /// A registered integration
 pub struct IntegrationEntry {
+    /// Stable API identity, independent of the display name; absent for legacy cards.
+    pub id: Option<&'static str>,
     pub name: &'static str,
     pub description: &'static str,
     pub category: IntegrationCategory,

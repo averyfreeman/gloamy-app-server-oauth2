@@ -1,14 +1,11 @@
 <script setup lang="ts">
+import type { IntegrationCatalogEntry } from '@/components/integrations/types'
 import { Icon } from '@iconify/vue'
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
+import { integrationSetupRegistry } from '@/components/integrations/setupRegistry'
 import { useAuthStore } from '@/stores/auth'
 
-interface Integration {
-  name: string
-  description: string
-  category: string
-  status: 'Available' | 'Active' | 'ComingSoon'
-}
+type Integration = IntegrationCatalogEntry
 
 interface SkillCatalogEntry {
   name: string
@@ -23,6 +20,17 @@ const loading = ref(true)
 const error = ref<string | null>(null)
 const searchQuery = ref('')
 const activeCategory = ref('All')
+const selectedSetupIntegration = ref<Integration | null>(null)
+const setupTrigger = ref<HTMLElement | null>(null)
+
+const selectedSetupRegistration = computed(() => {
+  const integration = selectedSetupIntegration.value
+  if (!integration?.id || !integration.setup_capability)
+    return undefined
+
+  const registration = integrationSetupRegistry[integration.id]
+  return registration?.capability === integration.setup_capability ? registration : undefined
+})
 
 const categories = computed(() => {
   const values = Array.from(new Set(integrations.value.map(item => item.category))).sort((a, b) => a.localeCompare(b))
@@ -118,6 +126,51 @@ function normalizeIntegrationResponse(response: Integration[] | { integrations?:
   return []
 }
 
+function integrationCardName(integration: Integration): string {
+  if (integration.id === 'openai-codex')
+    return 'OpenAI Codex (ChatGPT OAuth)'
+  if (integration.id === 'openai-api')
+    return 'OpenAI API Key'
+  return integration.name
+}
+
+function isSetupInteractive(integration: Integration): boolean {
+  if (!integration.id || !integration.setup_capability)
+    return false
+
+  const registration = integrationSetupRegistry[integration.id]
+  return registration?.capability === integration.setup_capability
+}
+
+function cardStatus(integration: Integration): Integration['status'] {
+  if (integration.id === 'openai-codex')
+    return integration.connected ? 'Active' : 'Available'
+  return integration.status
+}
+
+function cardStatusLabel(integration: Integration): string {
+  if (integration.id === 'openai-codex')
+    return integration.connected ? 'Connected' : 'Available'
+  return statusLabel(integration.status)
+}
+
+function openIntegrationSetup(integration: Integration, event: MouseEvent) {
+  if (!isSetupInteractive(integration))
+    return
+
+  setupTrigger.value = event.currentTarget as HTMLElement
+  selectedSetupIntegration.value = integration
+}
+
+function closeIntegrationSetup() {
+  selectedSetupIntegration.value = null
+  void nextTick(() => setupTrigger.value?.focus())
+}
+
+function refreshConnectedStatus() {
+  void fetchIntegrations(false)
+}
+
 function normalizeSkillsResponse(response: SkillCatalogEntry[] | { skills?: SkillCatalogEntry[] }): Integration[] {
   const entries = Array.isArray(response)
     ? response
@@ -178,6 +231,8 @@ const integrationLogoMap: Record<string, IntegrationLogo> = {
   OpenRouter: { icon: 'simple-icons:openrouter', color: '#00A3FF' },
   Anthropic: { icon: 'simple-icons:anthropic' },
   OpenAI: { icon: 'simple-icons:openai' },
+  'OpenAI API Key': { icon: 'simple-icons:openai' },
+  'OpenAI Codex (ChatGPT OAuth)': { icon: 'simple-icons:openai' },
   Google: { icon: 'simple-icons:googlegemini', color: '#8E75B2' },
   xAI: { icon: 'simple-icons:x' },
   Mistral: { icon: 'simple-icons:mistralai', color: '#FF7000' },
@@ -360,19 +415,27 @@ onMounted(() => {
           <section v-for="(integrationList, groupName) in groupedIntegrations" :key="groupName">
             <h2 class="font-sans text-[20px] font-medium text-foreground tracking-tight mb-3">{{ groupName }}</h2>
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-              <div
+              <component
+                :is="isSetupInteractive(integration) ? 'button' : 'div'"
                 v-for="integration in integrationList"
-                :key="integration.name"
-                class="p-4 rounded-2xl border border-border/40 bg-card/20 hover:bg-card/40 hover:border-border/60 transition-all"
+                :key="integration.id ?? `${integration.category}:${integration.name}`"
+                :type="isSetupInteractive(integration) ? 'button' : undefined"
+                :aria-haspopup="isSetupInteractive(integration) ? 'dialog' : undefined"
+                :aria-label="isSetupInteractive(integration) ? `Set up ${integrationCardName(integration)}` : undefined"
+                class="w-full rounded-2xl border border-border/40 bg-card/20 p-4 transition-colors"
+                :class="isSetupInteractive(integration)
+                  ? 'cursor-pointer text-left hover:border-border/60 hover:bg-card/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2'
+                  : ''"
+                @click="openIntegrationSetup(integration, $event)"
               >
                 <div class="flex items-center gap-2 pr-2 mb-1">
                   <Icon
-                    :icon="integrationIcon(integration.name, integration.category)"
+                    :icon="integrationIcon(integrationCardName(integration), integration.category)"
                     class="size-[16px] shrink-0"
-                    :class="integrationIconClass(integration.name, integration.category)"
-                    :style="integrationIconStyle(integration.name, integration.category)"
+                    :class="integrationIconClass(integrationCardName(integration), integration.category)"
+                    :style="integrationIconStyle(integrationCardName(integration), integration.category)"
                   />
-                  <h3 class="font-sans text-[15px] font-medium text-foreground truncate">{{ integration.name }}</h3>
+                  <span class="font-sans text-[15px] font-medium text-foreground truncate">{{ integrationCardName(integration) }}</span>
                 </div>
 
                 <p class="text-[13px] text-muted-foreground line-clamp-2 mb-3">
@@ -382,21 +445,30 @@ onMounted(() => {
                 <div class="flex items-center justify-between gap-2">
                   <span
                     class="inline-flex items-center gap-1.5 text-[11px] font-medium"
-                    :class="statusClass(integration.status)"
+                    :class="statusClass(cardStatus(integration))"
                   >
-                    <Icon :icon="statusIcon(integration.status)" class="size-3.5 shrink-0" />
-                    {{ statusLabel(integration.status) }}
+                    <Icon :icon="statusIcon(cardStatus(integration))" class="size-3.5 shrink-0" />
+                    {{ cardStatusLabel(integration) }}
                   </span>
                   <span class="text-[11px] text-muted-foreground truncate" :title="integration.category">
                     {{ integration.category }}
                   </span>
                 </div>
-              </div>
+              </component>
             </div>
           </section>
         </div>
       </template>
     </div>
+
+    <component
+      :is="selectedSetupRegistration.component"
+      v-if="selectedSetupRegistration && selectedSetupIntegration"
+      :open="Boolean(selectedSetupIntegration)"
+      :connected="Boolean(selectedSetupIntegration.connected)"
+      @close="closeIntegrationSetup"
+      @connected="refreshConnectedStatus"
+    />
   </div>
 </template>
 

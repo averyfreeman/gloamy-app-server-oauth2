@@ -30,6 +30,14 @@ When `default_model` is unset, Gloamy uses that provider's eligible recommended 
 
 For `default_provider = "codex-app-server"`, install the Codex CLI and sign in with `gloamy auth login --provider codex-app-server`. Set `default_model = "default"` to use the Codex installation's default model, or select an exact ID discovered by `gloamy models refresh --provider codex-app-server`.
 
+## Codex OAuth Selection from Integrations
+
+The `openai-codex` integration stores credentials in existing encrypted auth profiles, not in browser storage or config fields. Connecting an account does not select a global provider/model or rewrite unrelated config. Existing profiles, routes, fallbacks, personalization, and secrets are preserved.
+
+Applying a model is a separate action. An already-default Codex provider updates only `default_model`. Switching from another provider requires **Use Codex as default** and updates only `default_provider` and `default_model`. If a global `api_url` override belongs to the current provider, remove it explicitly before switching; the integration refuses to silently reuse or delete it. Gateway config updates are serialized so model application and config PUT do not overwrite each other's current settings.
+
+The dialog uses account-aware discovery when available, then eligible `openai-codex` choices and labels from the shared catalog. Explicit custom IDs are always supported. Connection and catalog presence do not guarantee entitlement or inference support. See [the setup API](gateway-api-reference.md#codex-oauth-integration-setup) and [catalog source limitations](codex-oauth-sources.md).
+
 ## Curated Model Catalog
 
 The shared catalog stores curated provider/model IDs, names, release dates, recommended defaults, explicit model aliases, optional input/output prices per million tokens, source URLs, and verification dates. Catalog loading and lookup are offline. Eligibility uses the current UTC calendar date. A model and its aliases are eligible for curated menus, recommendations, and built-in prices from its release date through the eight-calendar-month cutoff. Existing configured model IDs remain valid after they leave that window.

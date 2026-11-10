@@ -66,6 +66,20 @@ sources = [
 verified = "2026-11-09"
 
 [[models]]
+provider = "openai-codex"
+id = "gpt-6.1-sol"
+name = "GPT-6.1 Sol"
+released = "2026-09-29"
+recommended = false
+aliases = []
+sources = [
+  "https://learn.chatgpt.com/docs/app-server#list-models-modellist",
+  "https://developers.openai.com/api/docs/guides/code-generation#use-codex",
+  "https://developers.openai.com/api/docs/changelog?mw_entry=2026-09-29-962e96e45069e83d",
+]
+verified = "2026-11-10"
+
+[[models]]
 provider = "anthropic"
 id = "claude-opus-5-5"
 name = "Claude Opus 5.5"

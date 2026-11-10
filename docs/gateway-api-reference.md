@@ -404,6 +404,28 @@ Configurable via `[gateway.rate_limiting]` config section.
 
 ---
 
+## Codex OAuth Integration Setup
+
+`GET /api/integrations` keeps its existing wrapper and entry fields. The Codex entry adds `id: "openai-codex"`, `setup_capability: "oauth_device_code"`, and `connected`. Its display name distinguishes ChatGPT OAuth from the separate OpenAI API-key integration (`id: "openai-api"`). Connected state reflects an OAuth profile with usable or refreshable credentials, independently of the global default provider; it is not an entitlement or live-revocation check.
+
+All setup operations below require a valid stored gateway bearer token, even when general pairing enforcement is disabled. Flow IDs are opaque and bound to the bearer identity that started them; another paired caller cannot inspect or cancel them.
+
+| Method | Path | Behavior |
+| --- | --- | --- |
+| POST | `/api/integrations/openai-codex/oauth` | Start device authorization; no credential input required |
+| GET | `/api/integrations/openai-codex/oauth/{id}` | Inspect safe server-owned progress |
+| DELETE | `/api/integrations/openai-codex/oauth/{id}` | Cancel pending authorization |
+| GET | `/api/integrations/openai-codex/models` | Account-aware model discovery, eligible curated fallback, or custom-only selection |
+| POST | `/api/integrations/openai-codex/model` | Explicitly apply a model, optionally choosing Codex as default |
+
+A flow response contains `id`, `status` (`pending`, `success`, `error`, `expired`, or `cancelled`), optional `verification_uri`, `user_code`, `expires_at`, and a safe optional `error`. It never contains the private device code, access token, refresh token, ID token, or raw provider error payload. The daemon polls OpenAI; browser polling only inspects this safe state. Pending flows expire at the provider deadline or 15 minutes, whichever is sooner. At most eight authorizations can be pending, with one per bearer owner; concurrent start requests are rejected immediately. The service retains at most 32 flows in total, evicting older terminal results when needed. Terminal results otherwise expire after five minutes. Cancel cannot undo a credential write that has already crossed its persistence commit boundary.
+
+The model response contains `models: [{id, label}]`, `source` (`account`, `catalog`, or `custom`), `warning`, `selected_model`, `is_default`, and `connected`. Account discovery uses the same Gloamy OAuth profile against the Codex backend, never public `/v1/models` or an unrelated local Codex CLI login. See [verified mechanism and limitations](codex-oauth-sources.md). Custom IDs remain allowed regardless of either catalog.
+
+Apply a model with `{"model":"CUSTOM_MODEL_ID","use_as_default":false}`. If Codex is already default, this changes only `default_model`. If another provider is default, `use_as_default: true` is required and only the provider/model selection changes. Connection alone never edits config. A conflicting global API URL override must be removed explicitly in Configuration before switching providers; it is not silently erased or reused for Codex.
+
+Successful application returns `{"applied":true,"is_default":true,"selected_model":"CUSTOM_MODEL_ID"}`. Missing/invalid bearer tokens return `401`; unknown or other-owner flow IDs return `404`. Start failures can return a safe error flow or `502` when no flow can be reserved. Model-application conflicts return `409`, invalid request/config returns `400`, and persistence failure returns `500` without changing the in-memory selection. Credential-save failure never reports OAuth success.
+
 ## Related Documentation
 
 - [commands-reference.md](commands-reference.md) - CLI commands

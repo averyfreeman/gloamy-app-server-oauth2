@@ -8,6 +8,9 @@
 //! - Header sanitization (handled by axum/hyper)
 
 pub mod api;
+mod codex;
+#[cfg(test)]
+mod codex_tests;
 pub mod sse;
 pub mod static_files;
 pub mod ws;
@@ -285,6 +288,8 @@ fn normalize_max_keys(configured: usize, fallback: usize) -> usize {
 /// Shared state for all axum handlers
 #[derive(Clone)]
 pub struct AppState {
+    pub codex_setup: Arc<crate::auth::codex_setup::CodexOAuthSetup>,
+    pub config_update_lock: Arc<tokio::sync::Mutex<()>>,
     pub config: Arc<Mutex<Config>>,
     pub provider: Arc<dyn Provider>,
     pub model: String,
@@ -631,6 +636,8 @@ pub async fn run_gateway(host: &str, port: u16, config: Config) -> Result<()> {
     );
 
     let state = AppState {
+        codex_setup: Arc::new(crate::auth::codex_setup::CodexOAuthSetup::new()),
+        config_update_lock: Arc::new(tokio::sync::Mutex::new(())),
         config: config_state,
         provider,
         model,
@@ -701,6 +708,16 @@ pub async fn run_gateway(host: &str, port: u16, config: Config) -> Result<()> {
         .route("/api/cron", post(api::handle_api_cron_add))
         .route("/api/cron/{id}", delete(api::handle_api_cron_delete))
         .route("/api/integrations", get(api::handle_api_integrations))
+        .route("/api/integrations/openai-codex/oauth", post(codex::start))
+        .route(
+            "/api/integrations/openai-codex/oauth/{id}",
+            get(codex::inspect).delete(codex::cancel),
+        )
+        .route("/api/integrations/openai-codex/models", get(codex::models))
+        .route(
+            "/api/integrations/openai-codex/model",
+            post(codex::apply_model),
+        )
         .route("/api/skills", get(api::handle_api_skills))
         .route("/api/history", get(api::handle_api_history))
         .route("/api/session/{thread_id}", get(api::handle_api_session))
@@ -811,6 +828,7 @@ async fn handle_pair(
     match state.pairing.try_pair(code, &rate_key).await {
         Ok(Some(token)) => {
             tracing::info!("🔐 New client paired successfully");
+            let _config_write = state.config_update_lock.lock().await;
             if let Err(err) = persist_pairing_tokens(state.config.clone(), &state.pairing).await {
                 tracing::error!("🔐 Pairing succeeded but token persistence failed: {err:#}");
                 let body = serde_json::json!({
@@ -874,12 +892,39 @@ fn current_model(state: &AppState) -> Result<String> {
     )
 }
 
+/// A freshly selected Codex default must not keep using the startup API provider.
+fn provider_for_request(state: &AppState) -> Result<Arc<dyn Provider>> {
+    let config = state.config.lock().clone();
+    if crate::providers::canonical_provider_name(
+        config.default_provider.as_deref().unwrap_or("openai"),
+    ) != "openai-codex"
+    {
+        return Ok(Arc::clone(&state.provider));
+    }
+    Ok(Arc::from(
+        providers::create_resilient_provider_with_options(
+            "openai-codex",
+            config.api_key.as_deref(),
+            config.api_url.as_deref(),
+            &config.reliability,
+            &providers::ProviderRuntimeOptions {
+                auth_profile_override: None,
+                provider_api_url: config.api_url.clone(),
+                gloamy_dir: config.config_path.parent().map(std::path::PathBuf::from),
+                secrets_encrypt: config.secrets.encrypt,
+                reasoning_enabled: config.runtime.reasoning_enabled,
+            },
+        )?,
+    ))
+}
+
 /// Simple chat for webhook endpoint (no tools, for backward compatibility and testing).
 async fn run_gateway_chat_simple(
     state: &AppState,
     message: &str,
 ) -> anyhow::Result<crate::providers::ChatResponse> {
     let model = &state.model;
+    let provider = provider_for_request(state)?;
     let user_messages = vec![ChatMessage::user(message)];
 
     // Keep webhook/gateway prompts aligned with channel behavior by injecting
@@ -904,8 +949,7 @@ async fn run_gateway_chat_simple(
     let prepared =
         crate::multimodal::prepare_messages_for_provider(&messages, &multimodal_config).await?;
 
-    state
-        .provider
+    provider
         .chat(
             ChatRequest {
                 messages: &prepared.messages,
@@ -1876,6 +1920,8 @@ mod tests {
     #[tokio::test]
     async fn catalog_reload_requires_bearer_and_rejects_invalid_replacement() {
         let mut state = AppState {
+            codex_setup: Arc::new(crate::auth::codex_setup::CodexOAuthSetup::new()),
+            config_update_lock: Arc::new(tokio::sync::Mutex::new(())),
             config: Arc::new(Mutex::new(Config::default())),
             provider: Arc::new(MockProvider::default()),
             model: "test-model".into(),
@@ -1945,6 +1991,8 @@ mod tests {
     #[tokio::test]
     async fn metrics_endpoint_returns_hint_when_prometheus_is_disabled() {
         let state = AppState {
+            codex_setup: Arc::new(crate::auth::codex_setup::CodexOAuthSetup::new()),
+            config_update_lock: Arc::new(tokio::sync::Mutex::new(())),
             config: Arc::new(Mutex::new(Config::default())),
             provider: Arc::new(MockProvider::default()),
             model: "test-model".into(),
@@ -1994,6 +2042,8 @@ mod tests {
 
         let observer: Arc<dyn crate::observability::Observer> = prom;
         let state = AppState {
+            codex_setup: Arc::new(crate::auth::codex_setup::CodexOAuthSetup::new()),
+            config_update_lock: Arc::new(tokio::sync::Mutex::new(())),
             config: Arc::new(Mutex::new(Config::default())),
             provider: Arc::new(MockProvider::default()),
             model: "test-model".into(),
@@ -2221,7 +2271,7 @@ mod tests {
     }
 
     #[derive(Default)]
-    struct MockMemory;
+    pub(super) struct MockMemory;
 
     #[async_trait]
     impl Memory for MockMemory {
@@ -2274,7 +2324,7 @@ mod tests {
     }
 
     #[derive(Default)]
-    struct MockProvider {
+    pub(super) struct MockProvider {
         calls: AtomicUsize,
     }
 
@@ -2403,6 +2453,8 @@ mod tests {
         let memory: Arc<dyn Memory> = Arc::new(MockMemory);
 
         let state = AppState {
+            codex_setup: Arc::new(crate::auth::codex_setup::CodexOAuthSetup::new()),
+            config_update_lock: Arc::new(tokio::sync::Mutex::new(())),
             config: Arc::new(Mutex::new(Config::default())),
             provider,
             model: "test-model".into(),
@@ -2461,6 +2513,8 @@ mod tests {
     #[tokio::test]
     async fn api_chat_rejects_unpaired_bearer_token() {
         let state = AppState {
+            codex_setup: Arc::new(crate::auth::codex_setup::CodexOAuthSetup::new()),
+            config_update_lock: Arc::new(tokio::sync::Mutex::new(())),
             config: Arc::new(Mutex::new(Config::default())),
             provider: Arc::new(MockProvider::default()),
             model: "test-model".into(),
@@ -2509,6 +2563,8 @@ mod tests {
     #[tokio::test]
     async fn api_chat_rejects_empty_message() {
         let state = AppState {
+            codex_setup: Arc::new(crate::auth::codex_setup::CodexOAuthSetup::new()),
+            config_update_lock: Arc::new(tokio::sync::Mutex::new(())),
             config: Arc::new(Mutex::new(Config::default())),
             provider: Arc::new(MockProvider::default()),
             model: "test-model".into(),
@@ -2551,6 +2607,8 @@ mod tests {
     #[tokio::test]
     async fn api_chat_rate_limit_triggers_before_body_parse() {
         let state = AppState {
+            codex_setup: Arc::new(crate::auth::codex_setup::CodexOAuthSetup::new()),
+            config_update_lock: Arc::new(tokio::sync::Mutex::new(())),
             config: Arc::new(Mutex::new(Config::default())),
             provider: Arc::new(MockProvider::default()),
             model: "test-model".into(),
@@ -2621,6 +2679,8 @@ mod tests {
         let tracker = cost_tracker.expect("cost tracker should be enabled");
 
         let state = AppState {
+            codex_setup: Arc::new(crate::auth::codex_setup::CodexOAuthSetup::new()),
+            config_update_lock: Arc::new(tokio::sync::Mutex::new(())),
             config: Arc::new(Mutex::new(config)),
             provider,
             model: "test-model".into(),
@@ -2673,6 +2733,8 @@ mod tests {
         let memory: Arc<dyn Memory> = tracking_impl.clone();
 
         let state = AppState {
+            codex_setup: Arc::new(crate::auth::codex_setup::CodexOAuthSetup::new()),
+            config_update_lock: Arc::new(tokio::sync::Mutex::new(())),
             config: Arc::new(Mutex::new(Config::default())),
             provider,
             model: "test-model".into(),
@@ -2749,6 +2811,8 @@ mod tests {
         let secret = generate_test_secret();
 
         let state = AppState {
+            codex_setup: Arc::new(crate::auth::codex_setup::CodexOAuthSetup::new()),
+            config_update_lock: Arc::new(tokio::sync::Mutex::new(())),
             config: Arc::new(Mutex::new(Config::default())),
             provider,
             model: "test-model".into(),
@@ -2797,6 +2861,8 @@ mod tests {
         let wrong_secret = generate_test_secret();
 
         let state = AppState {
+            codex_setup: Arc::new(crate::auth::codex_setup::CodexOAuthSetup::new()),
+            config_update_lock: Arc::new(tokio::sync::Mutex::new(())),
             config: Arc::new(Mutex::new(Config::default())),
             provider,
             model: "test-model".into(),
@@ -2850,6 +2916,8 @@ mod tests {
         let secret = generate_test_secret();
 
         let state = AppState {
+            codex_setup: Arc::new(crate::auth::codex_setup::CodexOAuthSetup::new()),
+            config_update_lock: Arc::new(tokio::sync::Mutex::new(())),
             config: Arc::new(Mutex::new(Config::default())),
             provider,
             model: "test-model".into(),
@@ -2908,6 +2976,8 @@ mod tests {
         let memory: Arc<dyn Memory> = Arc::new(MockMemory);
 
         let state = AppState {
+            codex_setup: Arc::new(crate::auth::codex_setup::CodexOAuthSetup::new()),
+            config_update_lock: Arc::new(tokio::sync::Mutex::new(())),
             config: Arc::new(Mutex::new(Config::default())),
             provider,
             model: "test-model".into(),
@@ -2962,6 +3032,8 @@ mod tests {
         let invalid_signature = "deadbeef";
 
         let state = AppState {
+            codex_setup: Arc::new(crate::auth::codex_setup::CodexOAuthSetup::new()),
+            config_update_lock: Arc::new(tokio::sync::Mutex::new(())),
             config: Arc::new(Mutex::new(Config::default())),
             provider,
             model: "test-model".into(),

@@ -504,6 +504,7 @@ pub async fn handle_api_config_put(
         }
     };
 
+    let _config_write = state.config_update_lock.lock().await;
     let current_config = state.config.lock().clone();
     let new_config = hydrate_config_for_save(incoming, &current_config);
 
@@ -671,18 +672,41 @@ pub async fn handle_api_integrations(
     }
 
     let config = state.config.lock().clone();
+    let connected = match super::codex::is_connected(&config).await {
+        Ok(connected) => connected,
+        Err(_) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": "Unable to read integration credentials"})),
+            )
+                .into_response();
+        }
+    };
     let entries = crate::integrations::registry::all_integrations();
 
     let integrations: Vec<serde_json::Value> = entries
         .iter()
         .map(|entry| {
-            let status = (entry.status_fn)(&config);
-            serde_json::json!({
+            let is_codex = entry.id == Some("openai-codex");
+            let status = if is_codex && connected {
+                crate::integrations::IntegrationStatus::Active
+            } else {
+                (entry.status_fn)(&config)
+            };
+            let mut value = serde_json::json!({
                 "name": entry.name,
                 "description": entry.description,
                 "category": entry.category,
                 "status": status,
-            })
+            });
+            if let Some(id) = entry.id {
+                value["id"] = serde_json::json!(id);
+            }
+            if is_codex {
+                value["setup_capability"] = serde_json::json!("oauth_device_code");
+                value["connected"] = serde_json::json!(connected);
+            }
+            value
         })
         .collect();
 

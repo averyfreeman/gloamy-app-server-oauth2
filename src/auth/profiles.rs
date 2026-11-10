@@ -23,7 +23,7 @@ pub enum AuthProfileKind {
     Token,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct TokenSet {
     pub access_token: String,
     #[serde(default)]
@@ -36,6 +36,14 @@ pub struct TokenSet {
     pub token_type: Option<String>,
     #[serde(default)]
     pub scope: Option<String>,
+}
+
+impl std::fmt::Debug for TokenSet {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TokenSet")
+            .field("expires_at", &self.expires_at)
+            .finish_non_exhaustive()
+    }
 }
 
 impl TokenSet {
@@ -336,9 +344,18 @@ impl AuthProfilesStore {
             let (access_token, refresh_token, id_token, expires_at, token_type, scope) =
                 match (&profile.kind, &profile.token_set) {
                     (AuthProfileKind::OAuth, Some(token_set)) => (
-                        self.encrypt_optional(Some(&token_set.access_token))?,
-                        self.encrypt_optional(token_set.refresh_token.as_deref())?,
-                        self.encrypt_optional(token_set.id_token.as_deref())?,
+                        self.encrypt_oauth_optional(
+                            &profile.provider,
+                            Some(&token_set.access_token),
+                        )?,
+                        self.encrypt_oauth_optional(
+                            &profile.provider,
+                            token_set.refresh_token.as_deref(),
+                        )?,
+                        self.encrypt_oauth_optional(
+                            &profile.provider,
+                            token_set.id_token.as_deref(),
+                        )?,
                         token_set.expires_at.as_ref().map(DateTime::to_rfc3339),
                         token_set.token_type.clone(),
                         token_set.scope.clone(),
@@ -447,6 +464,24 @@ impl AuthProfilesStore {
         })?;
 
         Ok(())
+    }
+
+    fn encrypt_oauth_optional(
+        &self,
+        provider: &str,
+        value: Option<&str>,
+    ) -> Result<Option<String>> {
+        if provider != "openai-codex" {
+            return self.encrypt_optional(value);
+        }
+        // Codex OAuth credentials stay encrypted on every rewrite, including
+        // refreshes made by services using a disabled general config setting.
+        match value.filter(|value| !value.is_empty()) {
+            Some(value) => SecretStore::new(self.path.parent().unwrap_or(Path::new(".")), true)
+                .encrypt(value)
+                .map(Some),
+            None => Ok(None),
+        }
     }
 
     fn encrypt_optional(&self, value: Option<&str>) -> Result<Option<String>> {

@@ -10,6 +10,7 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
     vec![
         // ── Chat Providers ──────────────────────────────────────
         IntegrationEntry {
+            id: None,
             name: "Telegram",
             description: "Bot API — long-polling",
             category: IntegrationCategory::Chat,
@@ -22,6 +23,7 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
             },
         },
         IntegrationEntry {
+            id: None,
             name: "Discord",
             description: "Servers, channels & DMs",
             category: IntegrationCategory::Chat,
@@ -34,6 +36,7 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
             },
         },
         IntegrationEntry {
+            id: None,
             name: "Slack",
             description: "Workspace apps via Web API",
             category: IntegrationCategory::Chat,
@@ -46,6 +49,7 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
             },
         },
         IntegrationEntry {
+            id: None,
             name: "Webhooks",
             description: "HTTP endpoint for triggers",
             category: IntegrationCategory::Chat,
@@ -58,6 +62,7 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
             },
         },
         IntegrationEntry {
+            id: None,
             name: "WhatsApp",
             description: "Meta Cloud API via webhook",
             category: IntegrationCategory::Chat,
@@ -70,6 +75,7 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
             },
         },
         IntegrationEntry {
+            id: None,
             name: "Signal",
             description: "Privacy-focused via signal-cli",
             category: IntegrationCategory::Chat,
@@ -82,6 +88,7 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
             },
         },
         IntegrationEntry {
+            id: None,
             name: "iMessage",
             description: "macOS AppleScript bridge",
             category: IntegrationCategory::Chat,
@@ -94,12 +101,14 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
             },
         },
         IntegrationEntry {
+            id: None,
             name: "Microsoft Teams",
             description: "Enterprise chat support",
             category: IntegrationCategory::Chat,
             status_fn: |_| IntegrationStatus::ComingSoon,
         },
         IntegrationEntry {
+            id: None,
             name: "Matrix",
             description: "Matrix protocol (Element)",
             category: IntegrationCategory::Chat,
@@ -112,30 +121,35 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
             },
         },
         IntegrationEntry {
+            id: None,
             name: "Nostr",
             description: "Decentralized DMs (NIP-04)",
             category: IntegrationCategory::Chat,
             status_fn: |_| IntegrationStatus::ComingSoon,
         },
         IntegrationEntry {
+            id: None,
             name: "WebChat",
             description: "Browser-based chat UI",
             category: IntegrationCategory::Chat,
             status_fn: |_| IntegrationStatus::ComingSoon,
         },
         IntegrationEntry {
+            id: None,
             name: "Nextcloud Talk",
             description: "Self-hosted Nextcloud chat",
             category: IntegrationCategory::Chat,
             status_fn: |_| IntegrationStatus::ComingSoon,
         },
         IntegrationEntry {
+            id: None,
             name: "Zalo",
             description: "Zalo Bot API",
             category: IntegrationCategory::Chat,
             status_fn: |_| IntegrationStatus::ComingSoon,
         },
         IntegrationEntry {
+            id: None,
             name: "DingTalk",
             description: "DingTalk Stream Mode",
             category: IntegrationCategory::Chat,
@@ -148,6 +162,7 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
             },
         },
         IntegrationEntry {
+            id: None,
             name: "QQ Official",
             description: "Tencent QQ Bot SDK",
             category: IntegrationCategory::Chat,
@@ -161,6 +176,7 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
         },
         // ── AI Models ───────────────────────────────────────────
         IntegrationEntry {
+            id: None,
             name: "OpenRouter",
             description: "200+ models, 1 API key",
             category: IntegrationCategory::AiModel,
@@ -173,6 +189,7 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
             },
         },
         IntegrationEntry {
+            id: None,
             name: "Anthropic",
             description: "Anthropic language models",
             category: IntegrationCategory::AiModel,
@@ -185,8 +202,17 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
             },
         },
         IntegrationEntry {
+            id: Some("openai-codex"),
+            name: "OpenAI Codex (ChatGPT OAuth)",
+            description: "Connect your ChatGPT account for Codex; separate from OpenAI API keys",
+            category: IntegrationCategory::AiModel,
+            // AuthService supplies connected state at the gateway boundary.
+            status_fn: |_| IntegrationStatus::Available,
+        },
+        IntegrationEntry {
+            id: Some("openai-api"),
             name: "OpenAI",
-            description: "OpenAI API language models",
+            description: "OpenAI API language models using an API key (separate API billing)",
             category: IntegrationCategory::AiModel,
             status_fn: |c| {
                 if c.default_provider.as_deref() == Some("openai") {
@@ -197,6 +223,7 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
             },
         },
         IntegrationEntry {
+            id: None,
             name: "Google",
             description: "Google Gemini language models",
             category: IntegrationCategory::AiModel,
@@ -212,6 +239,7 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
             },
         },
         IntegrationEntry {
+            id: None,
             name: "DeepSeek",
             description: "DeepSeek V3 & R1",
             category: IntegrationCategory::AiModel,
@@ -227,6 +255,7 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
             },
         },
         IntegrationEntry {
+            id: None,
             name: "xAI",
             description: "xAI language models",
             category: IntegrationCategory::AiModel,
@@ -242,6 +271,7 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
             },
         },
         IntegrationEntry {
+            id: None,
             name: "Mistral",
             description: "Mistral language models",
             category: IntegrationCategory::AiModel,
@@ -257,6 +287,7 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
             },
         },
         IntegrationEntry {
+            id: None,
             name: "Ollama",
             description: "Local models (Llama, etc.)",
             category: IntegrationCategory::AiModel,
@@ -269,6 +300,7 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
             },
         },
         IntegrationEntry {
+            id: None,
             name: "Perplexity",
             description: "Search-augmented AI",
             category: IntegrationCategory::AiModel,
@@ -281,18 +313,21 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
             },
         },
         IntegrationEntry {
+            id: None,
             name: "Hugging Face",
             description: "Open-source models",
             category: IntegrationCategory::AiModel,
             status_fn: |_| IntegrationStatus::ComingSoon,
         },
         IntegrationEntry {
+            id: None,
             name: "LM Studio",
             description: "Local model server",
             category: IntegrationCategory::AiModel,
             status_fn: |_| IntegrationStatus::ComingSoon,
         },
         IntegrationEntry {
+            id: None,
             name: "Venice",
             description: "Privacy-first inference (Llama, Opus)",
             category: IntegrationCategory::AiModel,
@@ -305,6 +340,7 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
             },
         },
         IntegrationEntry {
+            id: None,
             name: "Vercel AI",
             description: "Vercel AI Gateway",
             category: IntegrationCategory::AiModel,
@@ -317,6 +353,7 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
             },
         },
         IntegrationEntry {
+            id: None,
             name: "Cloudflare AI",
             description: "Cloudflare AI Gateway",
             category: IntegrationCategory::AiModel,
@@ -329,6 +366,7 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
             },
         },
         IntegrationEntry {
+            id: None,
             name: "Moonshot",
             description: "Kimi & Kimi Coding",
             category: IntegrationCategory::AiModel,
@@ -341,6 +379,7 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
             },
         },
         IntegrationEntry {
+            id: None,
             name: "Synthetic",
             description: "Synthetic AI models",
             category: IntegrationCategory::AiModel,
@@ -353,6 +392,7 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
             },
         },
         IntegrationEntry {
+            id: None,
             name: "OpenCode Zen",
             description: "Code-focused AI models",
             category: IntegrationCategory::AiModel,
@@ -365,6 +405,7 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
             },
         },
         IntegrationEntry {
+            id: None,
             name: "Z.AI",
             description: "Z.AI inference",
             category: IntegrationCategory::AiModel,
@@ -377,6 +418,7 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
             },
         },
         IntegrationEntry {
+            id: None,
             name: "GLM",
             description: "ChatGLM / Zhipu models",
             category: IntegrationCategory::AiModel,
@@ -389,6 +431,7 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
             },
         },
         IntegrationEntry {
+            id: None,
             name: "MiniMax",
             description: "MiniMax AI models",
             category: IntegrationCategory::AiModel,
@@ -401,6 +444,7 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
             },
         },
         IntegrationEntry {
+            id: None,
             name: "Qwen",
             description: "Alibaba DashScope Qwen models",
             category: IntegrationCategory::AiModel,
@@ -413,6 +457,7 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
             },
         },
         IntegrationEntry {
+            id: None,
             name: "Amazon Bedrock",
             description: "AWS managed model access",
             category: IntegrationCategory::AiModel,
@@ -425,6 +470,7 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
             },
         },
         IntegrationEntry {
+            id: None,
             name: "Qianfan",
             description: "Baidu AI models",
             category: IntegrationCategory::AiModel,
@@ -437,6 +483,7 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
             },
         },
         IntegrationEntry {
+            id: None,
             name: "Groq",
             description: "Ultra-fast LPU inference",
             category: IntegrationCategory::AiModel,
@@ -449,6 +496,7 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
             },
         },
         IntegrationEntry {
+            id: None,
             name: "Together AI",
             description: "Open-source model hosting",
             category: IntegrationCategory::AiModel,
@@ -461,6 +509,7 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
             },
         },
         IntegrationEntry {
+            id: None,
             name: "Fireworks AI",
             description: "Fast open-source inference",
             category: IntegrationCategory::AiModel,
@@ -473,6 +522,7 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
             },
         },
         IntegrationEntry {
+            id: None,
             name: "Novita AI",
             description: "Affordable open-source inference",
             category: IntegrationCategory::AiModel,
@@ -485,6 +535,7 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
             },
         },
         IntegrationEntry {
+            id: None,
             name: "Cohere",
             description: "Command R+ & embeddings",
             category: IntegrationCategory::AiModel,
@@ -498,54 +549,63 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
         },
         // ── Productivity ────────────────────────────────────────
         IntegrationEntry {
+            id: None,
             name: "GitHub",
             description: "Code, issues, PRs",
             category: IntegrationCategory::Productivity,
             status_fn: |_| IntegrationStatus::ComingSoon,
         },
         IntegrationEntry {
+            id: None,
             name: "Notion",
             description: "Workspace & databases",
             category: IntegrationCategory::Productivity,
             status_fn: |_| IntegrationStatus::ComingSoon,
         },
         IntegrationEntry {
+            id: None,
             name: "Apple Notes",
             description: "Native macOS/iOS notes",
             category: IntegrationCategory::Productivity,
             status_fn: |_| IntegrationStatus::ComingSoon,
         },
         IntegrationEntry {
+            id: None,
             name: "Apple Reminders",
             description: "Task management",
             category: IntegrationCategory::Productivity,
             status_fn: |_| IntegrationStatus::ComingSoon,
         },
         IntegrationEntry {
+            id: None,
             name: "Obsidian",
             description: "Knowledge graph notes",
             category: IntegrationCategory::Productivity,
             status_fn: |_| IntegrationStatus::ComingSoon,
         },
         IntegrationEntry {
+            id: None,
             name: "Things 3",
             description: "GTD task manager",
             category: IntegrationCategory::Productivity,
             status_fn: |_| IntegrationStatus::ComingSoon,
         },
         IntegrationEntry {
+            id: None,
             name: "Bear Notes",
             description: "Markdown notes",
             category: IntegrationCategory::Productivity,
             status_fn: |_| IntegrationStatus::ComingSoon,
         },
         IntegrationEntry {
+            id: None,
             name: "Trello",
             description: "Kanban boards",
             category: IntegrationCategory::Productivity,
             status_fn: |_| IntegrationStatus::ComingSoon,
         },
         IntegrationEntry {
+            id: None,
             name: "Linear",
             description: "Issue tracking",
             category: IntegrationCategory::Productivity,
@@ -553,18 +613,21 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
         },
         // ── Music & Audio ───────────────────────────────────────
         IntegrationEntry {
+            id: None,
             name: "Spotify",
             description: "Music playback control",
             category: IntegrationCategory::MusicAudio,
             status_fn: |_| IntegrationStatus::ComingSoon,
         },
         IntegrationEntry {
+            id: None,
             name: "Sonos",
             description: "Multi-room audio",
             category: IntegrationCategory::MusicAudio,
             status_fn: |_| IntegrationStatus::ComingSoon,
         },
         IntegrationEntry {
+            id: None,
             name: "Shazam",
             description: "Song recognition",
             category: IntegrationCategory::MusicAudio,
@@ -572,18 +635,21 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
         },
         // ── Smart Home ──────────────────────────────────────────
         IntegrationEntry {
+            id: None,
             name: "Home Assistant",
             description: "Home automation hub",
             category: IntegrationCategory::SmartHome,
             status_fn: |_| IntegrationStatus::ComingSoon,
         },
         IntegrationEntry {
+            id: None,
             name: "Philips Hue",
             description: "Smart lighting",
             category: IntegrationCategory::SmartHome,
             status_fn: |_| IntegrationStatus::ComingSoon,
         },
         IntegrationEntry {
+            id: None,
             name: "8Sleep",
             description: "Smart mattress",
             category: IntegrationCategory::SmartHome,
@@ -591,54 +657,63 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
         },
         // ── Tools & Automation ──────────────────────────────────
         IntegrationEntry {
+            id: None,
             name: "Browser",
             description: "Chrome/Chromium control",
             category: IntegrationCategory::ToolsAutomation,
             status_fn: |_| IntegrationStatus::Available,
         },
         IntegrationEntry {
+            id: None,
             name: "Shell",
             description: "Terminal command execution",
             category: IntegrationCategory::ToolsAutomation,
             status_fn: |_| IntegrationStatus::Active,
         },
         IntegrationEntry {
+            id: None,
             name: "File System",
             description: "Read/write files",
             category: IntegrationCategory::ToolsAutomation,
             status_fn: |_| IntegrationStatus::Active,
         },
         IntegrationEntry {
+            id: None,
             name: "Cron",
             description: "Scheduled tasks",
             category: IntegrationCategory::ToolsAutomation,
             status_fn: |_| IntegrationStatus::Available,
         },
         IntegrationEntry {
+            id: None,
             name: "Voice",
             description: "Voice wake + talk mode",
             category: IntegrationCategory::ToolsAutomation,
             status_fn: |_| IntegrationStatus::ComingSoon,
         },
         IntegrationEntry {
+            id: None,
             name: "Gmail",
             description: "Email triggers & send",
             category: IntegrationCategory::ToolsAutomation,
             status_fn: |_| IntegrationStatus::ComingSoon,
         },
         IntegrationEntry {
+            id: None,
             name: "1Password",
             description: "Secure credentials",
             category: IntegrationCategory::ToolsAutomation,
             status_fn: |_| IntegrationStatus::ComingSoon,
         },
         IntegrationEntry {
+            id: None,
             name: "Weather",
             description: "Forecasts & conditions",
             category: IntegrationCategory::ToolsAutomation,
             status_fn: |_| IntegrationStatus::ComingSoon,
         },
         IntegrationEntry {
+            id: None,
             name: "Canvas",
             description: "Visual workspace + A2UI",
             category: IntegrationCategory::ToolsAutomation,
@@ -646,24 +721,28 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
         },
         // ── Media & Creative ────────────────────────────────────
         IntegrationEntry {
+            id: None,
             name: "Image Gen",
             description: "AI image generation",
             category: IntegrationCategory::MediaCreative,
             status_fn: |_| IntegrationStatus::ComingSoon,
         },
         IntegrationEntry {
+            id: None,
             name: "GIF Search",
             description: "Find the perfect GIF",
             category: IntegrationCategory::MediaCreative,
             status_fn: |_| IntegrationStatus::ComingSoon,
         },
         IntegrationEntry {
+            id: None,
             name: "Screen Capture",
             description: "Screenshot & screen control",
             category: IntegrationCategory::MediaCreative,
             status_fn: |_| IntegrationStatus::ComingSoon,
         },
         IntegrationEntry {
+            id: None,
             name: "Camera",
             description: "Photo/video capture",
             category: IntegrationCategory::MediaCreative,
@@ -671,12 +750,14 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
         },
         // ── Social ──────────────────────────────────────────────
         IntegrationEntry {
+            id: None,
             name: "Twitter/X",
             description: "Tweet, reply, search",
             category: IntegrationCategory::Social,
             status_fn: |_| IntegrationStatus::ComingSoon,
         },
         IntegrationEntry {
+            id: None,
             name: "Email",
             description: "IMAP/SMTP email channel",
             category: IntegrationCategory::Social,
@@ -690,6 +771,7 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
         },
         // ── Platforms ───────────────────────────────────────────
         IntegrationEntry {
+            id: None,
             name: "macOS",
             description: "Native support + AppleScript",
             category: IntegrationCategory::Platform,
@@ -702,6 +784,7 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
             },
         },
         IntegrationEntry {
+            id: None,
             name: "Linux",
             description: "Native support",
             category: IntegrationCategory::Platform,
@@ -714,12 +797,14 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
             },
         },
         IntegrationEntry {
+            id: None,
             name: "iOS",
             description: "Chat via Telegram/Discord",
             category: IntegrationCategory::Platform,
             status_fn: |_| IntegrationStatus::Available,
         },
         IntegrationEntry {
+            id: None,
             name: "Android",
             description: "Chat via Telegram/Discord",
             category: IntegrationCategory::Platform,
