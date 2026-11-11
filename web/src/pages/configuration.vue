@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import { useAuthStore } from '@/stores/auth'
 
@@ -730,7 +730,7 @@ onUnmounted(() => {
           <h3 class="text-lg font-medium text-foreground mb-2">Failed to load configuration</h3>
           <p class="text-sm text-muted-foreground mb-4">{{ error }}</p>
           <button
-            @click="fetchConfig"
+            @click="() => fetchConfig()"
             class="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:opacity-90 transition-opacity"
           >
             Try Again

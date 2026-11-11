@@ -12,6 +12,8 @@ dist
 dist-ssr
 coverage
 *.local
+playwright-report
+test-results
 
 /cypress/videos/
 /cypress/screenshots/
