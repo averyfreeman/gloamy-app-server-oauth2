@@ -1,9 +1,9 @@
 {
   "compilerOptions": {
     "composite": true,
-    "baseUrl": ".",
     "module": "ESNext",
     "moduleResolution": "bundler",
+    "types": ["node"],
     "paths": {
       "@/*": [
         "./src/*"
@@ -13,6 +13,8 @@
     "skipLibCheck": true
   },
   "include": [
-    "vite.config.ts"
+    "vite.config.ts",
+    "vitest.config.ts",
+    "playwright.config.ts"
   ]
 }

@@ -272,6 +272,8 @@ const handleLogout = async () => {
 </template>
 
 <style scoped>
+@import url('https://fonts.cdnfonts.com/css/plumby');
+
 .font-display {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   letter-spacing: -0.02em;
@@ -307,8 +309,6 @@ const handleLogout = async () => {
   opacity: 0;
   transform: translateY(-5px);
 }
-@import url('https://fonts.cdnfonts.com/css/plumby');
-
 .sidebar-brand {
   font-family: 'Plumby', 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }

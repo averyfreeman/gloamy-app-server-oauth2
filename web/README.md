@@ -81,7 +81,14 @@ contract to hold.
 ## Other commands
 
 ```bash
-pnpm lint       # ESLint
-pnpm lint:fix   # ESLint with auto-fix
-pnpm typecheck  # Vue + TypeScript validation
+pnpm lint       # Oxlint for JS/TS and Vue scripts; ESLint for Vue templates
+pnpm lint:fix   # Run both linters with auto-fix
+pnpm typecheck  # Vue SFCs, Vite config, tests, and TypeScript validation
+pnpm test:unit  # Unit tests in happy-dom
+pnpm test       # Unit tests, production build, and browser smoke tests
 ```
+
+The browser smoke tests run against the production preview and mock daemon HTTP
+requests. Install Chromium once with `pnpm exec playwright install chromium`;
+run `pnpm build` before invoking `pnpm test:smoke` directly. The `pnpm test`
+command builds automatically.
