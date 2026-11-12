@@ -46,7 +46,7 @@
 
 - [x] T022 Add native Tauri build jobs for macOS ARM64, Linux x64, and Linux ARM64 with required WebKitGTK dependencies in `.github/workflows/ci.yml`.
 - [x] T023 Add Tauri generated outputs and staged sidecars to `.gitignore`.
-- [ ] T024 Validate target-specific sidecar names and native build outputs in `scripts/build-tauri-sidecar.sh` and CI.
+- [x] T024 Validate host-specific sidecar staging and native build outputs in `scripts/build-tauri-sidecar.sh` and CI.
 
 ## Phase 7: Documentation and Security Review
 
@@ -59,7 +59,7 @@
 - [x] T028 Run authorized Rust formatting, clippy, and test checks and record results.
 - [x] T029 Run web lint, typecheck, unit tests, and production build.
 - [x] T030 Build and launch the macOS ARM64 app; verify pairing and configuration load/save.
-- [ ] T031 Build Linux x86_64 and ARM64 app bundles on native runners.
+- [x] T031 Build Linux x86_64 and ARM64 app bundles on native runners.
 - [x] T032 Review locale parity, lockfiles, generated files, and sensitive data in the final diff.
 
 ## Validation Results
@@ -73,7 +73,7 @@
 - Lifecycle smoke checks passed for keep-running Off and On across app exit/restart. The Off path stopped only the desktop-managed daemon; the On path left it running, and a restarted app reattached. The test config, pairing token, app preference, daemon, and socket were cleaned up after verification.
 - `git diff --check` and local Markdown link validation: passed. The touched operational runbook has seven pre-existing Markdown ordered-list warnings (`MD029`) under the repository's Markdown lint configuration.
 - Repository-wide `cargo fmt --all -- --check` reports existing formatting drift across untouched root files with the current Rust 1.99 formatter. Repository-wide `cargo clippy --all-targets --locked -- -D warnings` reports 11 pre-existing lints in untouched modules; no changed Rust files were among those lint locations. These two repository baseline failures are separate from the passing focused checks above.
-- Linux native build jobs are configured for `x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu`; their CI results are pending.
+- Native GitHub CI builds passed for all three targets: `aarch64-apple-darwin`, `x86_64-unknown-linux-gnu`, and `aarch64-unknown-linux-gnu`. The Linux Tauri jobs produced successful `.deb` bundles on the matching x64 and ARM64 runners.
 
 ## Dependencies and Execution Order
 
