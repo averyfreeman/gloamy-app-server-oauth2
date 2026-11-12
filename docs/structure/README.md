@@ -12,13 +12,9 @@ Last refreshed: **February 22, 2026**.
 
 | Language | Entry point | Canonical tree | Notes |
 |---|---|---|---|
-| English (`en`) | `docs/README.md` | `docs/` and `docs/i18n/en/` | Source-of-truth runtime behavior docs are authored in English first. |
-| Simplified Chinese (`zh-CN`) | `docs/i18n/zh-CN/` | `docs/i18n/zh-CN/` | Localized feature guides. |
-| Japanese (`ja`) | `docs/i18n/ja/` | `docs/i18n/ja/` | Localized feature guides. |
-| Russian (`ru`) | `docs/i18n/ru/` | `docs/i18n/ru/` | Localized feature guides. |
-| French (`fr`) | `docs/i18n/fr/` | `docs/i18n/fr/` | Localized feature guides. |
-| Vietnamese (`vi`) | `docs/i18n/vi/` | `docs/i18n/vi/` | Localized feature guides. |
-| Localization index | `docs/i18n/README.md` | `docs/i18n/` | Lists canonical locale-specific desktop guides. |
+| English (`en`) | `docs/README.md` | `docs/` | Backend runtime docs are authored in English. |
+| Desktop guides (`en`, `zh-CN`, `ja`, `ru`, `fr`, `vi`) | Desktop repo | `gloamy-fork-desktop-ui/docs/i18n/` | Localized desktop guides live with the desktop client. |
+| Localization index | `docs/i18n/README.md` | `docs/i18n/` | Links to standalone desktop guides. |
 
 ## 2) By Part (Category)
 

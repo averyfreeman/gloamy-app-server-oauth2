@@ -64,11 +64,11 @@ Important security and runtime properties include:
 - deny-by-default channel allowlists
 - explicit policy for tool and command execution
 
-### Web app
+### Independent clients
 
-The repository also includes a web app in `web/`, built with Vue 3 and Vite.
-
-It is the main UI for people who want a graphical workflow rather than the terminal-first path.
+The [Gloamy Web UI](https://github.com/averyfreeman/gloamy-fork-ui) and
+[Gloamy Desktop](https://github.com/averyfreeman/gloamy-fork-desktop-ui) are
+maintained separately from the daemon and connect through its gateway API.
 
 ## Best entry points
 

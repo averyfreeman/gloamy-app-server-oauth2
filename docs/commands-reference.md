@@ -121,7 +121,7 @@ Notes:
 
 Notes:
 
-- `gateway` exposes webhook, API, and WebSocket endpoints for integrations and the web app.
+- `gateway` exposes webhook, API, and WebSocket endpoints for integrations and separately maintained clients.
 - The legacy browser dashboard has been removed; `gateway` no longer serves a browser UI.
 
 ### `estop`

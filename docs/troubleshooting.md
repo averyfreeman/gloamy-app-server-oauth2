@@ -136,29 +136,6 @@ Persist in your shell profile if needed.
 
 ## Runtime / Gateway
 
-### Desktop app reports that the configured gateway address is occupied
-
-The desktop app will not start a second daemon when another service is already
-using the configured gateway host and port. Stop that service or change
-`gateway.host` / `gateway.port` in `~/.gloamy/config.toml`, then reopen Gloamy.
-The desktop webview currently connects only to `127.0.0.1` or `::1`; a specific
-non-loopback bind address is not supported by this POC.
-
-### Desktop pairing recovery is unavailable
-
-Use Authentication or Settings inside the desktop app to request a fresh code.
-Browser clients cannot request one because code generation is available only on
-the same-user Unix control socket. If pairing is disabled, the daemon rejects
-the request. Requesting a new code does not invalidate already paired tokens.
-
-### Desktop app cannot reach an existing daemon
-
-The app attaches only to a healthy daemon at the configured local address. Check
-that `gloamy daemon` is running and that `gateway.host` / `gateway.port` match.
-The app never stops an attached daemon unless its local control status marks it
-as desktop-managed; a legacy daemon without a control socket is treated as
-unmanaged.
-
 ### HostAgent perception fails on macOS
 
 Symptoms:
@@ -262,16 +239,16 @@ Verify `~/.gloamy/config.toml`:
 - `[gateway].port` (default `42617`)
 - `allow_public_bind` only when intentionally exposing LAN/public interfaces
 
-### Gateway opens in browser but no dashboard appears
+### Gateway opens in a browser but no dashboard appears
 
 Expected behavior:
 
 - the legacy browser dashboard has been removed
-- `gloamy gateway` now serves webhook, API, and WebSocket endpoints for desktop and external clients
+- `gloamy gateway` serves webhook, API, and WebSocket endpoints for separately maintained clients
 
 What to do:
 
-- use the web app for the primary UI
+- use the [Gloamy Web UI](https://github.com/averyfreeman/gloamy-fork-ui) or [Gloamy Desktop](https://github.com/averyfreeman/gloamy-fork-desktop-ui) for a graphical interface
 - use gateway routes only for integrations, automation, health checks, and API traffic
 
 ### Pairing / auth failures on webhook

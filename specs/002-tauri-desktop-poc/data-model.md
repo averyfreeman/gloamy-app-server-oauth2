@@ -9,6 +9,7 @@
 - `ready: bool`: true only after the gateway listener has bound successfully.
 - `api_base_url: Option<String>`: local URL derived from the actual bound socket address; absent until ready.
 - `desktop_managed: bool`: process-start marker set only by the hidden Tauri-managed launch argument; survives closing the desktop window because it is process state.
+- `gateway_version: Option<String>`: Cargo package version reported by current daemon releases; absent on older daemons.
 
 ## Pending pairing code
 

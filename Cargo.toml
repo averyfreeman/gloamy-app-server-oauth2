@@ -6,7 +6,7 @@ resolver = "2"
 
 [package]
 name = "gloamy"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2024"
 authors = ["iBz-04", "averyfreeman"]
 license = "MIT OR Apache-2.0"
