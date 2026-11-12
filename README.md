@@ -78,7 +78,8 @@ High-level repository map:
 - [`src/security/`](src/security): policy, pairing, secret handling
 - [`src/gateway/`](src/gateway): HTTP and websocket gateway
 - [`src/runtime/`](src/runtime): runtime adapters
-- [`web/`](web): pinned submodule for the Vue 3 UI ([standalone repository](https://github.com/averyfreeman/gloamy-fork-ui))
+- [Gloamy Web UI](https://github.com/search?q=gloamy-fork-ui&type=repositories): standalone Vue client
+- [Gloamy Desktop](https://github.com/search?q=gloamy-fork-desktop-ui&type=repositories): standalone Tauri client
 - [`docs/`](docs): operator, reference, and contribution docs
 
 ## Key Properties
@@ -192,16 +193,7 @@ Reference: [`docs/one-click-bootstrap.md`](docs/one-click-bootstrap.md)
 
 ### Docker
 
-To run the agent daemon and the web UI as containers:
-
-For a new checkout, include the UI submodule:
-
-```bash
-git clone --recurse-submodules https://github.com/averyfreeman/gloamy-app-server-oauth2.git
-cd gloamy-app-server-oauth2
-```
-
-If this repository is already cloned without submodules, initialize the pinned UI checkout with `git submodule update --init --recursive`.
+To run the agent daemon as a container:
 
 ```bash
 cp .env.example .env
@@ -213,10 +205,10 @@ Add a provider API key to `.env`, then:
 docker compose up -d --build
 ```
 
-The UI is served at <http://127.0.0.1:8080>, and the gateway API at
-<http://127.0.0.1:42617>. Both are bound to loopback. On first start the gateway
-prints a one-time pairing code — read it with `docker compose logs gloamy` and
-enter it in the UI.
+The gateway API is available at <http://127.0.0.1:42617>. It is bound to
+loopback. On first start the gateway prints a one-time pairing code — read it
+with `docker compose logs gloamy` and enter it in a client. The web and desktop
+clients are released independently from this backend repository.
 
 Reference: [`docs/docker-deployment.md`](docs/docker-deployment.md)
 
@@ -266,25 +258,12 @@ What it does not do:
 
 If you want a safe preview of the candidate entries without writing data, use `--dry-run`.
 
-## Web App
+## Independent UI Projects
 
-This repository tracks the Vue 3 and Vite UI as a submodule at [`web/`](web); the UI has its own [repository](https://github.com/averyfreeman/gloamy-fork-ui).
-
-Use the web app for the primary UI, and use the gateway for webhook/API access.
-
-The app is a thin client over the gateway's REST + SSE API. It reaches the
-daemon over same-origin paths (`/api/*`, `/pair`, `/health`), which the dev
-server forwards, so no CORS configuration is required.
-
-Initialize the UI submodule with `git submodule update --init --recursive` if needed. To run it locally, start the gateway first, then:
-
-```bash
-cd web
-pnpm install
-pnpm dev
-```
-
-For standalone setup, development, and deployment details, see the [UI repository README](https://github.com/averyfreeman/gloamy-fork-ui#readme).
+The [Gloamy Web UI](https://github.com/search?q=gloamy-fork-ui&type=repositories) and
+[Gloamy Desktop](https://github.com/search?q=gloamy-fork-desktop-ui&type=repositories) are
+maintained in separate repositories. Both use the daemon's REST and SSE API;
+the desktop project also bundles a versioned daemon binary for supported hosts.
 
 ## Running Modes
 

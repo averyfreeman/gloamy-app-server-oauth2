@@ -10,7 +10,7 @@ For event-by-event delivery behavior across PR and merge paths, see [`.github/wo
 
 - `.github/workflows/ci.yml` (`CI`)
   - Trigger: pushes to `main` and pull requests targeting `main`
-  - Purpose: PRs run tests and the minimum-supported Rust check; PRs and main pushes build all three maintained host targets
+  - Purpose: PRs run Rust tests and the minimum-supported Rust check; PRs and main pushes build all three maintained daemon targets
   - Apple Silicon target is cross-compiled with the macOS SDK on the macOS 15 Intel runner
   - Gate: this is the primary PR quality gate and main-push build gate
 
@@ -55,4 +55,5 @@ For event-by-event delivery behavior across PR and merge paths, see [`.github/wo
 - Keep merge-blocking checks deterministic and reproducible (`--locked` where applicable).
 - Keep `docs/release-process.md` aligned with release workflow behavior.
 - Keep this map synchronized whenever workflow filenames, triggers, or gate semantics change.
+- Web UI and desktop builds run in their standalone repositories, not in this backend workflow.
 - Prefer explicit workflow permissions and least-privilege defaults.

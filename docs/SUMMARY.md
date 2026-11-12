@@ -2,7 +2,7 @@
 
 This file is the canonical table of contents for the documentation system.
 
-Last refreshed: **November 3, 2026**.
+Last refreshed: **November 12, 2026**.
 
 ## Language Entry
 
@@ -45,7 +45,7 @@ Last refreshed: **November 3, 2026**.
 
 - [operations/README.md](operations/README.md)
 - [operations-runbook.md](operations-runbook.md)
-- [i18n/en/desktop-app.md](i18n/en/desktop-app.md)
+- [Desktop app guide](https://github.com/search?q=gloamy-fork-desktop-ui&type=repositories)
 - [docker-deployment.md](docker-deployment.md)
 - [release-process.md](release-process.md)
 - [troubleshooting.md](troubleshooting.md)

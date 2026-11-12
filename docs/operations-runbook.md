@@ -20,24 +20,13 @@ For first-time installation, start from [one-click-bootstrap.md](one-click-boots
 | Mode | Command | When to use |
 |---|---|---|
 | Foreground runtime | `gloamy daemon` | local debugging, short-lived sessions |
-| Foreground gateway only | `gloamy gateway` | webhook/API endpoint testing and web app connectivity |
+| Foreground gateway only | `gloamy gateway` | webhook/API endpoint testing and client connectivity |
 | User service | `gloamy service install && gloamy service start` | persistent operator-managed runtime |
-| macOS desktop app | Open Gloamy | local Vue UI with a daemon started or attached by the app |
 
-### macOS Desktop Daemon
-
-The Tauri desktop app starts the bundled daemon when no local Gloamy daemon is
-available. It attaches to a healthy existing daemon without taking ownership.
-The Settings screen's **Keep daemon running after closing** preference defaults
-to Off. Off requests graceful shutdown only for a daemon marked as desktop-managed;
-On leaves that daemon available to the browser UI. An attached unmanaged daemon
-is never stopped by closing the desktop app.
-
-Pairing recovery is available from Authentication or Settings in the desktop
-app. It requests a fresh, single-use code over the same-user local control socket
-and completes pairing through the existing `/pair` endpoint. Existing paired
-devices remain valid. The code is not written to configuration or logs, and
-there is no HTTP endpoint for generating one. See
+The web and desktop clients are maintained separately from the daemon. The
+[desktop guides](https://github.com/search?q=gloamy-fork-desktop-ui&type=repositories)
+cover its daemon lifecycle and local pairing recovery. The backend's private
+control-socket contract is documented in
 [Desktop control socket security](security/desktop-control-socket.md).
 
 ## Baseline Operator Checklist

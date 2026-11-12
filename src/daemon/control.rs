@@ -33,6 +33,8 @@ pub struct ControlResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub desktop_managed: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub gateway_version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub code: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
@@ -45,6 +47,7 @@ impl ControlResponse {
             ready: Some(ready),
             api_base_url,
             desktop_managed: Some(desktop_managed),
+            gateway_version: Some(env!("CARGO_PKG_VERSION").to_owned()),
             code: None,
             error: None,
         }
@@ -56,6 +59,7 @@ impl ControlResponse {
             ready: None,
             api_base_url: None,
             desktop_managed: None,
+            gateway_version: None,
             code: Some(code),
             error: None,
         }
@@ -67,6 +71,7 @@ impl ControlResponse {
             ready: None,
             api_base_url: None,
             desktop_managed: None,
+            gateway_version: None,
             code: None,
             error: None,
         }
@@ -78,6 +83,7 @@ impl ControlResponse {
             ready: None,
             api_base_url: None,
             desktop_managed: None,
+            gateway_version: None,
             code: None,
             error: Some(message.into()),
         }
@@ -408,6 +414,10 @@ mod tests {
         assert_eq!(status.ready, Some(false));
         assert_eq!(status.desktop_managed, Some(true));
         assert_eq!(status.api_base_url, None);
+        assert_eq!(
+            status.gateway_version.as_deref(),
+            Some(env!("CARGO_PKG_VERSION"))
+        );
 
         gateway_tx
             .send(Some("0.0.0.0:42617".parse().unwrap()))
@@ -443,9 +453,53 @@ mod tests {
             .await
             .unwrap();
         let code = response.code.expect("recovery code");
-        assert_eq!(pairing.pairing_code().as_deref(), Some(code.as_str()));
-        assert_eq!(pairing.tokens().len(), 1);
+        let new_token = pairing
+            .try_pair(&code, "gloamy_desktop")
+            .await
+            .unwrap()
+            .expect("recovery code pairs a new client");
+        assert!(pairing.is_authenticated(&new_token));
+        assert!(
+            pairing
+                .try_pair(&code, "gloamy_replay")
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(pairing.tokens().len(), 2);
         assert!(pairing.is_authenticated("zc_existing"));
+    }
+
+    #[tokio::test]
+    async fn control_server_issues_single_use_code_when_no_tokens_exist() {
+        let temp = tempdir().unwrap();
+        let (_, gateway_rx) = watch::channel(Some("127.0.0.1:42617".parse().unwrap()));
+        let (shutdown_tx, _) = watch::channel(false);
+        let pairing = Arc::new(PairingGuard::new(true, &[]));
+        let server =
+            ControlServer::start_in(temp.path(), pairing.clone(), false, gateway_rx, shutdown_tx)
+                .await
+                .unwrap();
+
+        let response = request(&server.socket_path, ControlRequest::RequestPairingCode)
+            .await
+            .unwrap();
+        let code = response.code.expect("recovery code");
+        let token = pairing
+            .try_pair(&code, "gloamy_desktop")
+            .await
+            .unwrap()
+            .expect("recovery code pairs a new client");
+
+        assert!(pairing.is_authenticated(&token));
+        assert!(
+            pairing
+                .try_pair(&code, "gloamy_replay")
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(pairing.tokens().len(), 1);
     }
 
     #[tokio::test]

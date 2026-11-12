@@ -5,7 +5,7 @@ For operators running Gloamy in persistent or production-like environments.
 ## Core Operations
 
 - Day-2 runbook: [../operations-runbook.md](../operations-runbook.md)
-- macOS desktop operation and pairing recovery: [../i18n/en/desktop-app.md](../i18n/en/desktop-app.md)
+- Desktop operation and pairing recovery: [Gloamy Desktop guides](https://github.com/search?q=gloamy-fork-desktop-ui&type=repositories)
 - Docker / Compose deployment: [../docker-deployment.md](../docker-deployment.md)
 - Release runbook: [../release-process.md](../release-process.md)
 - Troubleshooting matrix: [../troubleshooting.md](../troubleshooting.md)

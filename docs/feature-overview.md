@@ -64,13 +64,11 @@ Important security and runtime properties include:
 - deny-by-default channel allowlists
 - explicit policy for tool and command execution
 
-### Web app
+### Independent clients
 
-The repository pins the Vue 3/Vite web app as the `web/` submodule from
-[gloamy-fork-ui](https://github.com/averyfreeman/gloamy-fork-ui). Initialize
-submodules before building or running the UI.
-
-It is the main UI for people who want a graphical workflow rather than the terminal-first path.
+The [Gloamy Web UI](https://github.com/search?q=gloamy-fork-ui&type=repositories) and
+[Gloamy Desktop](https://github.com/search?q=gloamy-fork-desktop-ui&type=repositories) are
+maintained separately from the daemon and connect through its gateway API.
 
 ## Best entry points
 

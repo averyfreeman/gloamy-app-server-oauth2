@@ -13,7 +13,7 @@
 ```
 
 ```json
-{"ok":true,"ready":true,"api_base_url":"http://127.0.0.1:42617","desktop_managed":true}
+{"ok":true,"ready":true,"api_base_url":"http://127.0.0.1:42617","desktop_managed":true,"gateway_version":"0.2.2"}
 ```
 
 ```json
@@ -33,6 +33,10 @@
 ```
 
 Errors return `{"ok":false,"error":"<safe message>"}` without secrets. `request_pairing_code` fails when pairing is disabled. A request rotates the pending code; code generation is never reachable through HTTP.
+
+`gateway_version` is included in status responses by current releases and is
+optional when reading status, so clients continue to support older daemons
+that omit it.
 
 ## Lifecycle
 

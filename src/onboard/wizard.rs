@@ -524,6 +524,23 @@ fn resolve_quick_setup_dirs_with_home(home: &Path) -> (PathBuf, PathBuf) {
     (config_dir.clone(), config_dir.join("workspace"))
 }
 
+fn quick_setup_gateway_summary(gateway: &crate::config::GatewayConfig) -> String {
+    let host = match gateway.host.parse::<std::net::IpAddr>() {
+        Ok(std::net::IpAddr::V6(_)) => format!("[{}]", gateway.host),
+        _ => gateway.host.clone(),
+    };
+    let pairing = if gateway.require_pairing {
+        "pairing required"
+    } else {
+        "pairing disabled"
+    };
+
+    format!(
+        "API at http://{host}:{} ({pairing}); use a standalone Gloamy client for the UI",
+        gateway.port
+    )
+}
+
 #[allow(clippy::too_many_lines)]
 async fn run_quick_setup_with_home(
     credential_override: Option<&str>,
@@ -674,7 +691,7 @@ async fn run_quick_setup_with_home(
     println!(
         "  {} Gateway:    {}",
         style("✓").green().bold(),
-        style("pairing required (127.0.0.1:8080)").green()
+        style(quick_setup_gateway_summary(&config.gateway)).green()
     );
     println!(
         "  {} Tunnel:     {}",
@@ -5481,6 +5498,20 @@ mod tests {
         let memory = memory_config_defaults_for_backend("sqlite");
 
         assert!(memory.embedding_model.is_empty());
+    }
+
+    #[test]
+    fn quick_setup_gateway_summary_uses_configured_address_and_names_standalone_ui() {
+        let gateway = crate::config::GatewayConfig {
+            host: "::1".to_string(),
+            port: 43123,
+            ..crate::config::GatewayConfig::default()
+        };
+
+        assert_eq!(
+            quick_setup_gateway_summary(&gateway),
+            "API at http://[::1]:43123 (pairing required); use a standalone Gloamy client for the UI"
+        );
     }
 
     #[test]
