@@ -78,7 +78,7 @@ High-level repository map:
 - [`src/security/`](src/security): policy, pairing, secret handling
 - [`src/gateway/`](src/gateway): HTTP and websocket gateway
 - [`src/runtime/`](src/runtime): runtime adapters
-- [`web/`](web): Vue 3 web application
+- [`web/`](web): pinned submodule for the Vue 3 UI ([standalone repository](https://github.com/averyfreeman/gloamy-fork-ui))
 - [`docs/`](docs): operator, reference, and contribution docs
 
 ## Key Properties
@@ -194,6 +194,15 @@ Reference: [`docs/one-click-bootstrap.md`](docs/one-click-bootstrap.md)
 
 To run the agent daemon and the web UI as containers:
 
+For a new checkout, include the UI submodule:
+
+```bash
+git clone --recurse-submodules https://github.com/averyfreeman/gloamy-app-server-oauth2.git
+cd gloamy-app-server-oauth2
+```
+
+If this repository is already cloned without submodules, initialize the pinned UI checkout with `git submodule update --init --recursive`.
+
 ```bash
 cp .env.example .env
 ```
@@ -259,7 +268,7 @@ If you want a safe preview of the candidate entries without writing data, use `-
 
 ## Web App
 
-This repository also includes a web application in [`web/`](web), built with Vue 3 and Vite.
+This repository tracks the Vue 3 and Vite UI as a submodule at [`web/`](web); the UI has its own [repository](https://github.com/averyfreeman/gloamy-fork-ui).
 
 Use the web app for the primary UI, and use the gateway for webhook/API access.
 
@@ -267,7 +276,7 @@ The app is a thin client over the gateway's REST + SSE API. It reaches the
 daemon over same-origin paths (`/api/*`, `/pair`, `/health`), which the dev
 server forwards, so no CORS configuration is required.
 
-If you want to run the UI locally, start the gateway first, then:
+Initialize the UI submodule with `git submodule update --init --recursive` if needed. To run it locally, start the gateway first, then:
 
 ```bash
 cd web
@@ -275,7 +284,7 @@ pnpm install
 pnpm dev
 ```
 
-For setup, development, and deployment details, see [`web/README.md`](web/README.md).
+For standalone setup, development, and deployment details, see the [UI repository README](https://github.com/averyfreeman/gloamy-fork-ui#readme).
 
 ## Running Modes
 

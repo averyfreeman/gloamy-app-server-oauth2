@@ -5,6 +5,11 @@ that runs the agent daemon together with the web UI.
 
 Last verified: **August 24, 2026**.
 
+The UI source is maintained in the public
+[gloamy-fork-ui repository](https://github.com/averyfreeman/gloamy-fork-ui) and
+is pinned as the `web` submodule here. Clone with `--recurse-submodules`, or run
+`git submodule update --init --recursive` before building the Compose stack.
+
 ## What Ships Where
 
 | File | Purpose |

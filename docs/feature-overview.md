@@ -66,7 +66,9 @@ Important security and runtime properties include:
 
 ### Web app
 
-The repository also includes a web app in `web/`, built with Vue 3 and Vite.
+The repository pins the Vue 3/Vite web app as the `web/` submodule from
+[gloamy-fork-ui](https://github.com/averyfreeman/gloamy-fork-ui). Initialize
+submodules before building or running the UI.
 
 It is the main UI for people who want a graphical workflow rather than the terminal-first path.
 

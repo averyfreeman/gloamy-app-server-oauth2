@@ -1,6 +1,6 @@
 //! Static file handlers for the legacy embedded dashboard surface.
 //!
-//! The gateway does not serve UI assets. The web app in `web/` is built and
+//! The gateway does not serve UI assets. The web app in the `web/` submodule is built and
 //! served separately and calls this gateway's REST/SSE API, so these handlers
 //! intentionally return a clear error instead of embedded dashboard assets.
 
@@ -19,6 +19,6 @@ pub async fn handle_spa_fallback() -> impl IntoResponse {
 fn no_embedded_ui_response() -> impl IntoResponse {
     (
         StatusCode::NOT_FOUND,
-        "This gateway serves the API only and does not host the UI. Build and serve the web app in web/, which calls this gateway's API.",
+        "This gateway serves the API only and does not host the UI. Initialize the web submodule and build the Vue app from web/; it calls this gateway's API.",
     )
 }

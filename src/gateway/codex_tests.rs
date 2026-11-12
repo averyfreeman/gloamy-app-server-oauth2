@@ -104,6 +104,14 @@ async fn connected_state_is_independent_and_catalog_fields_are_additive() {
     let body = response.into_body().collect().await.unwrap().to_bytes();
     let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
     let entries = value["integrations"].as_array().unwrap();
+    let ids: std::collections::HashSet<_> = entries
+        .iter()
+        .map(|entry| entry["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(ids.len(), entries.len());
+    for catalog_entry in entries {
+        assert!(catalog_entry["implementation_type"].is_string());
+    }
     let entry = entries
         .iter()
         .find(|entry| entry["id"] == "openai-codex")
@@ -111,10 +119,17 @@ async fn connected_state_is_independent_and_catalog_fields_are_additive() {
     assert_eq!(entry["connected"], true);
     assert_eq!(entry["status"], "Active");
     assert_eq!(entry["setup_capability"], "oauth_device_code");
+    assert_eq!(entry["implementation_type"], "ai_provider");
     for field in ["name", "description", "category", "status"] {
         assert!(entry.get(field).is_some());
     }
-    assert!(entries.iter().any(|entry| entry["id"] == "openai-api"));
+    let openai_api = entries
+        .iter()
+        .find(|entry| entry["id"] == "openai-api")
+        .unwrap();
+    assert_eq!(openai_api["name"], "OpenAI");
+    assert_eq!(openai_api["implementation_type"], "ai_provider");
+    assert!(openai_api.get("setup_capability").is_none());
     assert_eq!(
         state.config.lock().default_provider.as_deref(),
         Some("openai")
