@@ -45,6 +45,7 @@ Last refreshed: **November 3, 2026**.
 
 - [operations/README.md](operations/README.md)
 - [operations-runbook.md](operations-runbook.md)
+- [i18n/en/desktop-app.md](i18n/en/desktop-app.md)
 - [docker-deployment.md](docker-deployment.md)
 - [release-process.md](release-process.md)
 - [troubleshooting.md](troubleshooting.md)
@@ -54,6 +55,7 @@ Last refreshed: **November 3, 2026**.
 ### 5) Security Design & Proposals
 
 - [security/README.md](security/README.md)
+- [security/desktop-control-socket.md](security/desktop-control-socket.md)
 - [agnostic-security.md](agnostic-security.md)
 - [sandboxing.md](sandboxing.md)
 - [resource-limits.md](resource-limits.md)

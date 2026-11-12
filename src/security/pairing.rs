@@ -89,6 +89,28 @@ impl PairingGuard {
         self.pairing_code.lock().clone()
     }
 
+    /// Generate a fresh one-time code for a new client without revoking paired tokens.
+    ///
+    /// The returned code remains in memory until it is consumed by `try_pair` or
+    /// replaced by another recovery request.
+    pub fn request_pairing_code(&self) -> Option<String> {
+        if !self.require_pairing {
+            return None;
+        }
+
+        let mut pending_code = self.pairing_code.lock();
+        let previous_code = pending_code.as_deref();
+        let code = loop {
+            let candidate = generate_code();
+            if Some(candidate.as_str()) != previous_code {
+                break candidate;
+            }
+        };
+
+        *pending_code = Some(code.clone());
+        Some(code)
+    }
+
     /// Whether pairing is required at all.
     pub fn require_pairing(&self) -> bool {
         self.require_pairing
@@ -341,6 +363,54 @@ mod tests {
     async fn new_guard_no_code_when_pairing_disabled() {
         let guard = PairingGuard::new(false, &[]);
         assert!(guard.pairing_code().is_none());
+    }
+
+    #[test]
+    async fn request_pairing_code_enables_recovery_when_tokens_exist() {
+        let guard = PairingGuard::new(true, &["zc_existing".into()]);
+
+        let code = guard.request_pairing_code().expect("pairing is enabled");
+
+        assert_eq!(guard.pairing_code().as_deref(), Some(code.as_str()));
+        assert_eq!(guard.tokens().len(), 1);
+        assert!(guard.is_authenticated("zc_existing"));
+    }
+
+    #[test]
+    async fn request_pairing_code_rotates_pending_code() {
+        let guard = PairingGuard::new(true, &[]);
+        let first = guard.request_pairing_code().unwrap();
+
+        let second = guard.request_pairing_code().unwrap();
+
+        assert_ne!(first, second);
+        assert_eq!(guard.pairing_code().as_deref(), Some(second.as_str()));
+    }
+
+    #[test]
+    async fn request_pairing_code_is_unavailable_when_pairing_is_disabled() {
+        let guard = PairingGuard::new(false, &[]);
+
+        assert!(guard.request_pairing_code().is_none());
+    }
+
+    #[test]
+    async fn recovery_code_pairs_once_without_revoking_existing_tokens() {
+        let guard = PairingGuard::new(true, &["zc_existing".into()]);
+        let code = guard.request_pairing_code().unwrap();
+
+        let new_token = guard.try_pair(&code, "new_client").await.unwrap().unwrap();
+
+        assert!(guard.is_authenticated("zc_existing"));
+        assert!(guard.is_authenticated(&new_token));
+        assert_eq!(guard.tokens().len(), 2);
+        assert!(
+            guard
+                .try_pair(&code, "replay_client")
+                .await
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]

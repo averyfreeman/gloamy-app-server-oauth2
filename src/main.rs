@@ -264,7 +264,15 @@ Examples:
         /// Host to bind to; defaults to config gateway.host
         #[arg(long)]
         host: Option<String>,
+
+        /// Mark this daemon as owned by the bundled desktop application.
+        #[arg(long, hide = true)]
+        desktop_managed: bool,
     },
+
+    /// Print non-secret runtime connection information for the desktop host.
+    #[command(hide = true)]
+    DesktopInfo,
 
     /// Manage OS service lifecycle (launchd/systemd user service)
     Service {
@@ -776,6 +784,16 @@ async fn main() -> Result<()> {
     // All other commands need config loaded first
     let mut config = Config::load_or_init().await?;
     config.apply_env_overrides();
+    if matches!(&cli.command, Commands::DesktopInfo) {
+        println!(
+            "{}",
+            serde_json::json!({
+                "gateway_host": config.gateway.host,
+                "gateway_port": config.gateway.port,
+            })
+        );
+        return Ok(());
+    }
     normalize_runtime_capabilities(&mut config).await;
     observability::runtime_trace::init_from_config(&config.observability, &config.workspace_dir);
     if config.security.otp.enabled {
@@ -820,7 +838,11 @@ async fn main() -> Result<()> {
             gateway::run_gateway(&host, port, config).await
         }
 
-        Commands::Daemon { port, host } => {
+        Commands::Daemon {
+            port,
+            host,
+            desktop_managed,
+        } => {
             let port = port.unwrap_or(config.gateway.port);
             let host = host.unwrap_or_else(|| config.gateway.host.clone());
             if port == 0 {
@@ -829,8 +851,10 @@ async fn main() -> Result<()> {
                 info!("🧠 Starting Gloamy Daemon on {host}:{port}");
             }
             tools::browser_services::ensure_started(&config.browser).await;
-            daemon::run(config, host, port).await
+            daemon::run(config, host, port, desktop_managed).await
         }
+
+        Commands::DesktopInfo => unreachable!(),
 
         Commands::Status => {
             println!("🦀 Gloamy Status");

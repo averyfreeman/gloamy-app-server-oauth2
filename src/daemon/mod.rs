@@ -1,14 +1,19 @@
 use crate::config::Config;
+use crate::security::pairing::PairingGuard;
 use anyhow::Result;
 use chrono::Utc;
 use std::future::Future;
 use std::path::PathBuf;
+use std::sync::Arc;
+use tokio::sync::watch;
 use tokio::task::JoinHandle;
-use tokio::time::Duration;
+use tokio::time::{Duration, Instant};
+
+pub mod control;
 
 const STATUS_FLUSH_SECONDS: u64 = 5;
 
-pub async fn run(config: Config, host: String, port: u16) -> Result<()> {
+pub async fn run(config: Config, host: String, port: u16, desktop_managed: bool) -> Result<()> {
     tracing::info!(
         webdriver_endpoint = %config.browser.native_webdriver_url,
         computer_use_endpoint = %config.browser.computer_use.endpoint,
@@ -25,25 +30,57 @@ pub async fn run(config: Config, host: String, port: u16) -> Result<()> {
 
     crate::health::mark_component_ok("daemon");
 
+    let pairing = Arc::new(PairingGuard::new(
+        config.gateway.require_pairing,
+        &config.gateway.paired_tokens,
+    ));
+    let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
+    let (gateway_addr_tx, gateway_addr_rx) = watch::channel(None);
+    let control_server = control::ControlServer::start(
+        pairing.clone(),
+        desktop_managed,
+        gateway_addr_rx,
+        shutdown_tx.clone(),
+    )
+    .await?;
+
     if config.heartbeat.enabled {
         let _ =
             crate::heartbeat::engine::HeartbeatEngine::ensure_heartbeat_file(&config.workspace_dir)
                 .await;
     }
 
-    let mut handles: Vec<JoinHandle<()>> = vec![spawn_state_writer(config.clone())];
+    let mut handles: Vec<JoinHandle<()>> =
+        vec![spawn_state_writer(config.clone(), shutdown_rx.clone())];
 
     {
         let gateway_cfg = config.clone();
         let gateway_host = host.clone();
+        let gateway_shutdown = shutdown_rx.clone();
         handles.push(spawn_component_supervisor(
             "gateway",
             initial_backoff,
             max_backoff,
+            shutdown_rx.clone(),
+            true,
             move || {
                 let cfg = gateway_cfg.clone();
                 let host = gateway_host.clone();
-                async move { crate::gateway::run_gateway(&host, port, cfg).await }
+                let pairing = pairing.clone();
+                let gateway_addr = gateway_addr_tx.clone();
+                let shutdown = gateway_shutdown.clone();
+                async move {
+                    crate::gateway::run_daemon_gateway(
+                        &host,
+                        port,
+                        cfg,
+                        pairing,
+                        desktop_managed,
+                        gateway_addr,
+                        shutdown,
+                    )
+                    .await
+                }
             },
         ));
     }
@@ -55,6 +92,8 @@ pub async fn run(config: Config, host: String, port: u16) -> Result<()> {
                 "channels",
                 initial_backoff,
                 max_backoff,
+                shutdown_rx.clone(),
+                false,
                 move || {
                     let cfg = channels_cfg.clone();
                     async move { crate::channels::start_channels(cfg).await }
@@ -72,6 +111,8 @@ pub async fn run(config: Config, host: String, port: u16) -> Result<()> {
             "heartbeat",
             initial_backoff,
             max_backoff,
+            shutdown_rx.clone(),
+            false,
             move || {
                 let cfg = heartbeat_cfg.clone();
                 async move { Box::pin(run_heartbeat_worker(cfg)).await }
@@ -85,6 +126,8 @@ pub async fn run(config: Config, host: String, port: u16) -> Result<()> {
             "scheduler",
             initial_backoff,
             max_backoff,
+            shutdown_rx.clone(),
+            false,
             move || {
                 let cfg = scheduler_cfg.clone();
                 async move { crate::cron::scheduler::run(cfg).await }
@@ -104,15 +147,27 @@ pub async fn run(config: Config, host: String, port: u16) -> Result<()> {
     println!("   Components: gateway, channels, heartbeat, scheduler");
     println!("   Ctrl+C to stop");
 
-    tokio::signal::ctrl_c().await?;
+    tokio::select! {
+        signal = tokio::signal::ctrl_c() => signal?,
+        changed = shutdown_rx.changed() => {
+            if changed.is_err() {
+                anyhow::bail!("daemon control channel closed before shutdown");
+            }
+        }
+    }
+    shutdown_tx.send_replace(true);
     crate::health::mark_component_error("daemon", "shutdown requested");
 
-    for handle in &handles {
-        handle.abort();
+    let shutdown_deadline = Instant::now() + Duration::from_secs(10);
+    for mut handle in handles {
+        let remaining = shutdown_deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() || tokio::time::timeout(remaining, &mut handle).await.is_err() {
+            handle.abort();
+            tracing::warn!("daemon component did not stop before shutdown timeout");
+        }
     }
-    for handle in handles {
-        let _ = handle.await;
-    }
+
+    control_server.stop().await;
 
     Ok(())
 }
@@ -125,7 +180,7 @@ pub fn state_file_path(config: &Config) -> PathBuf {
         .join("daemon_state.json")
 }
 
-fn spawn_state_writer(config: Config) -> JoinHandle<()> {
+fn spawn_state_writer(config: Config, mut shutdown: watch::Receiver<bool>) -> JoinHandle<()> {
     tokio::spawn(async move {
         let path = state_file_path(&config);
         if let Some(parent) = path.parent() {
@@ -134,7 +189,15 @@ fn spawn_state_writer(config: Config) -> JoinHandle<()> {
 
         let mut interval = tokio::time::interval(Duration::from_secs(STATUS_FLUSH_SECONDS));
         loop {
-            interval.tick().await;
+            tokio::select! {
+                _ = interval.tick() => {}
+                changed = shutdown.changed() => {
+                    if changed.is_err() || *shutdown.borrow() {
+                        break;
+                    }
+                    continue;
+                }
+            }
             let mut json = crate::health::snapshot_json();
             if let Some(obj) = json.as_object_mut() {
                 obj.insert(
@@ -152,6 +215,8 @@ fn spawn_component_supervisor<F, Fut>(
     name: &'static str,
     initial_backoff_secs: u64,
     max_backoff_secs: u64,
+    mut shutdown: watch::Receiver<bool>,
+    graceful_shutdown: bool,
     mut run_component: F,
 ) -> JoinHandle<()>
 where
@@ -163,8 +228,33 @@ where
         let max_backoff = max_backoff_secs.max(backoff);
 
         loop {
+            if *shutdown.borrow() {
+                break;
+            }
             crate::health::mark_component_ok(name);
-            match run_component().await {
+            let result = if graceful_shutdown {
+                Some(run_component().await)
+            } else {
+                tokio::select! {
+                    result = run_component() => Some(result),
+                    changed = shutdown.changed() => {
+                        if changed.is_err() || *shutdown.borrow() {
+                            None
+                        } else {
+                            continue;
+                        }
+                    }
+                }
+            };
+            let Some(result) = result else {
+                break;
+            };
+
+            if *shutdown.borrow() {
+                break;
+            }
+
+            match result {
                 Ok(()) => {
                     crate::health::mark_component_error(name, "component exited unexpectedly");
                     tracing::warn!("Daemon component '{name}' exited unexpectedly");
@@ -178,7 +268,15 @@ where
             }
 
             crate::health::bump_component_restart(name);
-            tokio::time::sleep(Duration::from_secs(backoff)).await;
+            tokio::select! {
+                _ = tokio::time::sleep(Duration::from_secs(backoff)) => {}
+                changed = shutdown.changed() => {
+                    if changed.is_err() || *shutdown.borrow() {
+                        break;
+                    }
+                    continue;
+                }
+            }
             // Double backoff AFTER sleeping so first error uses initial_backoff
             backoff = backoff.saturating_mul(2).min(max_backoff);
         }
@@ -210,16 +308,7 @@ async fn run_heartbeat_worker(config: Config) -> Result<()> {
         for task in tasks {
             let prompt = format!("[Heartbeat Task] {task}");
             let temp = config.default_temperature;
-            match crate::agent::run(
-                config.clone(),
-                Some(prompt),
-                None,
-                None,
-                temp,
-                false,
-            )
-            .await
-            {
+            match crate::agent::run(config.clone(), Some(prompt), None, None, temp, false).await {
                 Ok(output) => {
                     crate::health::mark_component_ok("heartbeat");
                     let announcement = if output.trim().is_empty() {
@@ -363,9 +452,11 @@ mod tests {
 
     #[tokio::test]
     async fn supervisor_marks_error_and_restart_on_failure() {
-        let handle = spawn_component_supervisor("daemon-test-fail", 1, 1, || async {
-            anyhow::bail!("boom")
-        });
+        let (_shutdown_tx, shutdown) = watch::channel(false);
+        let handle =
+            spawn_component_supervisor("daemon-test-fail", 1, 1, shutdown, false, || async {
+                anyhow::bail!("boom")
+            });
 
         tokio::time::sleep(Duration::from_millis(50)).await;
         handle.abort();
@@ -375,15 +466,21 @@ mod tests {
         let component = &snapshot["components"]["daemon-test-fail"];
         assert_eq!(component["status"], "error");
         assert!(component["restart_count"].as_u64().unwrap_or(0) >= 1);
-        assert!(component["last_error"]
-            .as_str()
-            .unwrap_or("")
-            .contains("boom"));
+        assert!(
+            component["last_error"]
+                .as_str()
+                .unwrap_or("")
+                .contains("boom")
+        );
     }
 
     #[tokio::test]
     async fn supervisor_marks_unexpected_exit_as_error() {
-        let handle = spawn_component_supervisor("daemon-test-exit", 1, 1, || async { Ok(()) });
+        let (_shutdown_tx, shutdown) = watch::channel(false);
+        let handle =
+            spawn_component_supervisor("daemon-test-exit", 1, 1, shutdown, false, || async {
+                Ok(())
+            });
 
         tokio::time::sleep(Duration::from_millis(50)).await;
         handle.abort();
@@ -393,10 +490,33 @@ mod tests {
         let component = &snapshot["components"]["daemon-test-exit"];
         assert_eq!(component["status"], "error");
         assert!(component["restart_count"].as_u64().unwrap_or(0) >= 1);
-        assert!(component["last_error"]
-            .as_str()
-            .unwrap_or("")
-            .contains("component exited unexpectedly"));
+        assert!(
+            component["last_error"]
+                .as_str()
+                .unwrap_or("")
+                .contains("component exited unexpectedly")
+        );
+    }
+
+    #[tokio::test]
+    async fn supervisor_exits_when_daemon_shutdown_is_requested() {
+        let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+        let handle = spawn_component_supervisor(
+            "daemon-test-shutdown",
+            1,
+            1,
+            shutdown_rx,
+            false,
+            || async { std::future::pending::<Result<()>>().await },
+        );
+
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        shutdown_tx.send(true).unwrap();
+
+        tokio::time::timeout(Duration::from_millis(200), handle)
+            .await
+            .expect("supervisor exits promptly")
+            .unwrap();
     }
 
     #[test]
@@ -498,9 +618,10 @@ mod tests {
         let mut config = Config::default();
         config.heartbeat.target = Some("telegram".into());
         let err = heartbeat_delivery_target(&config).unwrap_err();
-        assert!(err
-            .to_string()
-            .contains("heartbeat.to is required when heartbeat.target is set"));
+        assert!(
+            err.to_string()
+                .contains("heartbeat.to is required when heartbeat.target is set")
+        );
     }
 
     #[test]
@@ -508,9 +629,10 @@ mod tests {
         let mut config = Config::default();
         config.heartbeat.to = Some("123456".into());
         let err = heartbeat_delivery_target(&config).unwrap_err();
-        assert!(err
-            .to_string()
-            .contains("heartbeat.target is required when heartbeat.to is set"));
+        assert!(
+            err.to_string()
+                .contains("heartbeat.target is required when heartbeat.to is set")
+        );
     }
 
     #[test]
@@ -519,9 +641,10 @@ mod tests {
         config.heartbeat.target = Some("email".into());
         config.heartbeat.to = Some("ops@example.com".into());
         let err = heartbeat_delivery_target(&config).unwrap_err();
-        assert!(err
-            .to_string()
-            .contains("unsupported heartbeat.target channel"));
+        assert!(
+            err.to_string()
+                .contains("unsupported heartbeat.target channel")
+        );
     }
 
     #[test]
@@ -530,9 +653,10 @@ mod tests {
         config.heartbeat.target = Some("telegram".into());
         config.heartbeat.to = Some("123456".into());
         let err = heartbeat_delivery_target(&config).unwrap_err();
-        assert!(err
-            .to_string()
-            .contains("channels_config.telegram is not configured"));
+        assert!(
+            err.to_string()
+                .contains("channels_config.telegram is not configured")
+        );
     }
 
     #[test]

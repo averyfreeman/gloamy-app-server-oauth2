@@ -1,5 +1,8 @@
 # ── Build artifacts ───────────────────────────────────────────
 /target
+web/src-tauri/target
+web/src-tauri/resources/gloamy
+web/src-tauri/gen/schemas
 firmware/*/target
 
 # Local CI / buildx cache (created by dev/ci.sh docker-smoke)
