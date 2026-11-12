@@ -687,23 +687,30 @@ pub async fn handle_api_integrations(
     let integrations: Vec<serde_json::Value> = entries
         .iter()
         .map(|entry| {
-            let is_codex = entry.id == Some("openai-codex");
+            let is_codex = entry.id == "openai-codex";
             let status = if is_codex && connected {
                 crate::integrations::IntegrationStatus::Active
             } else {
                 (entry.status_fn)(&config)
             };
             let mut value = serde_json::json!({
+                "id": entry.id,
+                "implementation_type": entry.implementation_type,
                 "name": entry.name,
                 "description": entry.description,
                 "category": entry.category,
                 "status": status,
             });
-            if let Some(id) = entry.id {
-                value["id"] = serde_json::json!(id);
+            if let Some(capability) = entry.setup_capability {
+                if let Some(handler) =
+                    crate::integrations::setup::IntegrationSetupDispatcher::resolve(
+                        entry.id, capability,
+                    )
+                {
+                    value["setup_capability"] = serde_json::json!(handler.capability);
+                }
             }
             if is_codex {
-                value["setup_capability"] = serde_json::json!("oauth_device_code");
                 value["connected"] = serde_json::json!(connected);
             }
             value

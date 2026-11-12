@@ -172,7 +172,11 @@ Discover CLI tools available on the system.
 
 #### `GET /api/integrations`
 
-List configured third-party integrations and their status.
+List the integration catalog and current status. Each record has a stable `id`,
+an `implementation_type`, `name`, `description`, `category`, and `status`.
+`implementation_type` is one of `ai_provider`, `communication_channel`,
+`remote_service`, or `local_runtime`; it is separate from the display category.
+`setup_capability` is omitted unless a matching setup handler is registered.
 
 **Response:**
 
@@ -180,13 +184,22 @@ List configured third-party integrations and their status.
 {
   "integrations": [
     {
-      "name": "composio",
-      "enabled": true,
-      "connected": true
+      "id": "openai-codex",
+      "implementation_type": "ai_provider",
+      "name": "OpenAI Codex (ChatGPT OAuth)",
+      "description": "Connect your ChatGPT account for Codex; separate from OpenAI API keys",
+      "category": "AiModel",
+      "status": "Available",
+      "setup_capability": "oauth_device_code",
+      "connected": false
     },
     {
-      "name": "one",
-      "enabled": false
+      "id": "openai-api",
+      "implementation_type": "ai_provider",
+      "name": "OpenAI",
+      "description": "OpenAI API language models using an API key (separate API billing)",
+      "category": "AiModel",
+      "status": "Available"
     }
   ]
 }
@@ -406,7 +419,16 @@ Configurable via `[gateway.rate_limiting]` config section.
 
 ## Codex OAuth Integration Setup
 
-`GET /api/integrations` keeps its existing wrapper and entry fields. The Codex entry adds `id: "openai-codex"`, `setup_capability: "oauth_device_code"`, and `connected`. Its display name distinguishes ChatGPT OAuth from the separate OpenAI API-key integration (`id: "openai-api"`). Connected state reflects an OAuth profile with usable or refreshable credentials, independently of the global default provider; it is not an entitlement or live-revocation check.
+`GET /api/integrations` keeps its existing wrapper and legacy entry fields. All
+78 records now add stable `id` and `implementation_type` fields. The four
+implementation families are AI providers, communication channels, remote
+services, and local runtimes. `setup_capability` is optional and only appears
+when a concrete handler is registered through the integration setup
+dispatcher. The Codex entry adds `setup_capability: "oauth_device_code"` and
+`connected`. Its display name distinguishes ChatGPT OAuth from the separate
+OpenAI API-key integration (`id: "openai-api"`). Connected state reflects an
+OAuth profile with usable or refreshable credentials, independently of the
+global default provider; it is not an entitlement or live-revocation check.
 
 All setup operations below require a valid stored gateway bearer token, even when general pairing enforcement is disabled. Flow IDs are opaque and bound to the bearer identity that started them; another paired caller cannot inspect or cancel them.
 

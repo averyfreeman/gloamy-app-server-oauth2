@@ -31,14 +31,12 @@ Last reviewed: **November 3, 2026**.
 | `docs/reference/README.md` | Current Guide | users/operators |
 | `docs/operations/README.md` | Current Guide | operators |
 | `docs/security/README.md` | Current Guide | operators/contributors |
-| `docs/project/README.md` | Current Guide | maintainers |
 
-## Architecture & Domain Terms
+## Domain Terms
 
 | Doc | Type | Audience |
 |---|---|---|
-| `docs/project/adr/0002-codex-app-server-oauth-ownership.md` | Architecture Decision | maintainers/integrators |
-| `docs/project/glossary.md` | Domain Glossary | all readers |
+| `GLOSSARY.md` | Domain Glossary | all readers |
 
 ## Current Guides & References
 

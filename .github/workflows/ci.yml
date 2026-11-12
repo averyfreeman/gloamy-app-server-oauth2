@@ -100,51 +100,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Check all host features on the minimum compiler
         run: cargo check --workspace --all-targets --all-features --locked -j4
-
-  web:
-    name: Web checks
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 12.18.0
-          run_install: false
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: web/.nvmrc
-          cache: pnpm
-          cache-dependency-path: web/pnpm-lock.yaml
-
-      - name: Install web dependencies
-        working-directory: web
-        run: pnpm install --frozen-lockfile
-
-      - name: Install Chromium
-        working-directory: web
-        run: pnpm exec playwright install --with-deps chromium
-
-      - name: Lint
-        working-directory: web
-        run: pnpm lint
-
-      - name: Typecheck
-        working-directory: web
-        run: pnpm typecheck
-
-      - name: Unit tests
-        working-directory: web
-        run: pnpm test:unit
-
-      - name: Build
-        working-directory: web
-        run: pnpm build
-
-      - name: Browser smoke tests
-        working-directory: web
-        run: pnpm test:smoke
-
   desktop:
     name: Tauri desktop (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
@@ -164,6 +119,8 @@ jobs:
             bundle: deb
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.99.1

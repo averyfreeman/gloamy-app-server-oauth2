@@ -1,4 +1,5 @@
 pub mod registry;
+pub mod setup;
 
 use crate::config::Config;
 use anyhow::Result;
@@ -26,6 +27,24 @@ pub enum IntegrationCategory {
     MediaCreative,
     Social,
     Platform,
+}
+
+/// Standard implementation family used by setup UI and backend integration handlers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IntegrationType {
+    AiProvider,
+    CommunicationChannel,
+    RemoteService,
+    LocalRuntime,
+}
+
+/// User-facing setup flows supported by the integration setup dispatcher.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SetupCapability {
+    #[serde(rename = "oauth_device_code")]
+    OAuthDeviceCode,
 }
 
 impl IntegrationCategory {
@@ -60,8 +79,12 @@ impl IntegrationCategory {
 
 /// A registered integration
 pub struct IntegrationEntry {
-    /// Stable API identity, independent of the display name; absent for legacy cards.
-    pub id: Option<&'static str>,
+    /// Stable API identity, independent of the display name.
+    pub id: &'static str,
+    /// Handler family, independent of the display category.
+    pub implementation_type: IntegrationType,
+    /// Setup flow advertised only when a matching backend handler exists.
+    pub setup_capability: Option<SetupCapability>,
     pub name: &'static str,
     pub description: &'static str,
     pub category: IntegrationCategory,
