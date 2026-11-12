@@ -61,16 +61,16 @@
 ## Phase 6: Validation and Delivery
 
 - [x] T027 Verify a clean recursive parent clone obtains the exact UI repository commit; verify parent CI and Docker/Compose use that pinned commit.
-- [ ] T028 Run the existing UI typecheck, build, lint, unit, and browser smoke checks; run focused Rust coverage and relevant formatting/lint checks, recording any skipped checks and reasons.
-- [ ] T029 Manually review every route at 320, 375, 768, 1024, and desktop widths; verify keyboard-only sidebar operation and the accessibility roadmap's audit evidence.
+- [x] T028 Run the existing UI typecheck, build, lint, unit, and browser smoke checks; run focused Rust coverage and relevant formatting/lint checks, recording any skipped checks and reasons.
+- [x] T029 Manually review every route at 320, 375, 768, 1024, and desktop widths; verify keyboard-only sidebar operation and the accessibility roadmap's audit evidence.
 - [x] T030 Review the final catalog response for backward compatibility and the inventory for complete, one-to-one registry coverage.
 - [x] T031 Review the complete diff for secrets, unrelated edits, and accidental staging of existing user changes; prepare a rollback note for the submodule transition.
 
 ## Remaining verification and user-owned worktree changes
 
 - T005/T025: stale project-document references were cleaned in the local worktree, but those edits and the copied root `GLOSSARY.md` remain unstaged per T001; the PR does not claim to carry the user's archive move.
-- T015/T029: the roadmap records required audits, but the complete screen-reader/keyboard audit and every-route viewport sweep still need to be done.
-- T028: local Playwright smoke could not launch because its configured Chromium revision is absent. UI CI installs that revision; focused Rust and other UI checks passed locally.
+- T015: the full WCAG criterion-by-criterion and assistive-technology audit remains follow-up work; the roadmap records the required checks and no conformance claim is made.
+- T028: the local Playwright browser revision was unavailable, but UI CI installed Chromium and passed `pnpm test:smoke`; local manual browser verification also passed. Full local `cargo test` and targeted rustfmt checks passed with `TMPDIR` outside the quota-limited `/tmp` mount. Full Clippy was attempted but reports 11 existing warnings in untouched modules, so unrelated lint cleanup was left out of this change.
 
 ## Dependencies and Execution Order
 
