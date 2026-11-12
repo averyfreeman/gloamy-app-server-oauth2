@@ -2,6 +2,7 @@
 
 use super::AppState;
 use crate::auth::{AuthService, profiles::AuthProfileKind};
+use crate::integrations::{SetupCapability, setup::IntegrationSetupDispatcher};
 use axum::{
     Json,
     extract::{Path, State},
@@ -39,6 +40,17 @@ fn owner(state: &AppState, headers: &HeaderMap) -> Result<String, Box<Response>>
     Ok(hex::encode(Sha256::digest(token.as_bytes())))
 }
 
+fn setup_handler() -> Option<crate::integrations::setup::SetupHandler> {
+    IntegrationSetupDispatcher::resolve("openai-codex", SetupCapability::OAuthDeviceCode)
+}
+
+fn unavailable_setup() -> Response {
+    error(
+        StatusCode::NOT_FOUND,
+        "Authorization is unavailable or has been cleaned up",
+    )
+}
+
 pub(super) async fn is_connected(config: &crate::config::Config) -> anyhow::Result<bool> {
     let auth = AuthService::new(&crate::auth::state_dir_from_config(config), true);
     Ok(auth
@@ -61,8 +73,11 @@ pub(super) async fn start(State(state): State<AppState>, headers: HeaderMap) -> 
         Ok(owner) => owner,
         Err(response) => return *response,
     };
+    let Some(handler) = setup_handler() else {
+        return unavailable_setup();
+    };
     let config = state.config.lock().clone();
-    match state.codex_setup.start(&owner, &config).await {
+    match IntegrationSetupDispatcher::start(handler, &state.codex_setup, &owner, &config).await {
         Ok(view) => Json(view).into_response(),
         Err(_) => error(
             StatusCode::BAD_GATEWAY,
@@ -80,12 +95,12 @@ pub(super) async fn inspect(
         Ok(owner) => owner,
         Err(response) => return *response,
     };
-    match state.codex_setup.inspect(&id, &owner).await {
+    let Some(handler) = setup_handler() else {
+        return unavailable_setup();
+    };
+    match IntegrationSetupDispatcher::inspect(handler, &state.codex_setup, &id, &owner).await {
         Some(view) => Json(view).into_response(),
-        None => error(
-            StatusCode::NOT_FOUND,
-            "Authorization is unavailable or has been cleaned up",
-        ),
+        None => unavailable_setup(),
     }
 }
 
@@ -98,12 +113,12 @@ pub(super) async fn cancel(
         Ok(owner) => owner,
         Err(response) => return *response,
     };
-    match state.codex_setup.cancel(&id, &owner).await {
+    let Some(handler) = setup_handler() else {
+        return unavailable_setup();
+    };
+    match IntegrationSetupDispatcher::cancel(handler, &state.codex_setup, &id, &owner).await {
         Some(view) => Json(view).into_response(),
-        None => error(
-            StatusCode::NOT_FOUND,
-            "Authorization is unavailable or has been cleaned up",
-        ),
+        None => unavailable_setup(),
     }
 }
 

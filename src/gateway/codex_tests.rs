@@ -4,8 +4,18 @@ use axum::http::HeaderValue;
 use http_body_util::BodyExt;
 
 fn state(config: Config) -> AppState {
+    state_with_setup(
+        config,
+        Arc::new(crate::auth::codex_setup::CodexOAuthSetup::new()),
+    )
+}
+
+fn state_with_setup(
+    config: Config,
+    codex_setup: Arc<crate::auth::codex_setup::CodexOAuthSetup>,
+) -> AppState {
     AppState {
-        codex_setup: Arc::new(crate::auth::codex_setup::CodexOAuthSetup::new()),
+        codex_setup,
         config_update_lock: Arc::new(tokio::sync::Mutex::new(())),
         config: Arc::new(Mutex::new(config)),
         provider: Arc::new(MockProvider::default()),
@@ -29,6 +39,30 @@ fn state(config: Config) -> AppState {
         tools_registry: Arc::new(Vec::new()),
         cost_tracker: None,
         event_tx: tokio::sync::broadcast::channel(16).0,
+    }
+}
+
+struct PendingOAuthBackend;
+
+#[async_trait::async_trait]
+impl crate::auth::codex_setup::DeviceOAuthBackend for PendingOAuthBackend {
+    async fn start(&self) -> anyhow::Result<crate::auth::openai_oauth::DeviceCodeStart> {
+        Ok(crate::auth::openai_oauth::DeviceCodeStart {
+            device_code: "server-only-device-secret".into(),
+            user_code: "ABCD-EFGH".into(),
+            verification_uri: "https://auth.openai.com/codex/device".into(),
+            verification_uri_complete: None,
+            expires_in: 60,
+            interval: 1,
+            message: None,
+        })
+    }
+
+    async fn poll(
+        &self,
+        _device: &crate::auth::openai_oauth::DeviceCodeStart,
+    ) -> anyhow::Result<crate::auth::profiles::TokenSet> {
+        std::future::pending().await
     }
 }
 
@@ -110,7 +144,10 @@ async fn connected_state_is_independent_and_catalog_fields_are_additive() {
         .collect();
     assert_eq!(ids.len(), entries.len());
     for catalog_entry in entries {
-        assert!(catalog_entry["implementation_type"].is_string());
+        assert!(matches!(
+            catalog_entry["implementation_type"].as_str(),
+            Some("ai_provider" | "communication_channel" | "remote_service" | "local_runtime")
+        ));
     }
     let entry = entries
         .iter()
@@ -137,6 +174,63 @@ async fn connected_state_is_independent_and_catalog_fields_are_additive() {
     let encoded = String::from_utf8(body.to_vec()).unwrap();
     assert!(!encoded.contains("fixture-access-token"));
     assert!(!encoded.contains("fixture-refresh-token"));
+}
+
+#[tokio::test]
+async fn registered_codex_handler_dispatches_start_inspect_and_cancel_without_secrets() {
+    let directory = tempfile::TempDir::new().unwrap();
+    let mut config = Config::default();
+    config.config_path = directory.path().join("config.toml");
+    let setup = Arc::new(crate::auth::codex_setup::CodexOAuthSetup::with_backend(
+        Arc::new(PendingOAuthBackend),
+    ));
+    let state = state_with_setup(config, setup);
+
+    let response = codex::start(State(state.clone()), headers()).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(value["status"], "pending");
+    assert_eq!(value["user_code"], "ABCD-EFGH");
+    assert_eq!(
+        value["verification_uri"],
+        "https://auth.openai.com/codex/device"
+    );
+    let flow_id = value["id"].as_str().unwrap().to_string();
+    let encoded = String::from_utf8(body.to_vec()).unwrap();
+    assert!(!encoded.contains("server-only-device-secret"));
+
+    let inspected = codex::inspect(
+        State(state.clone()),
+        headers(),
+        axum::extract::Path(flow_id.clone()),
+    )
+    .await;
+    assert_eq!(inspected.status(), StatusCode::OK);
+    let inspected: serde_json::Value =
+        serde_json::from_slice(&inspected.into_body().collect().await.unwrap().to_bytes()).unwrap();
+    assert_eq!(inspected["status"], "pending");
+
+    let cancelled = codex::cancel(
+        State(state.clone()),
+        headers(),
+        axum::extract::Path(flow_id.clone()),
+    )
+    .await;
+    assert_eq!(cancelled.status(), StatusCode::OK);
+    let cancelled: serde_json::Value =
+        serde_json::from_slice(&cancelled.into_body().collect().await.unwrap().to_bytes()).unwrap();
+    assert_eq!(cancelled["status"], "cancelled");
+
+    let unavailable = codex::start(
+        State(AppState {
+            codex_setup: state.codex_setup.clone(),
+            ..state
+        }),
+        HeaderMap::new(),
+    )
+    .await;
+    assert_eq!(unavailable.status(), StatusCode::UNAUTHORIZED);
 }
 
 #[tokio::test]

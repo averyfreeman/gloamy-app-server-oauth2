@@ -906,7 +906,7 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
         },
         IntegrationEntry {
             id: "email",
-            implementation_type: IntegrationType::RemoteService,
+            implementation_type: IntegrationType::CommunicationChannel,
             setup_capability: None,
             name: "Email",
             description: "IMAP/SMTP email channel",
@@ -952,7 +952,7 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
         },
         IntegrationEntry {
             id: "ios",
-            implementation_type: IntegrationType::LocalRuntime,
+            implementation_type: IntegrationType::CommunicationChannel,
             setup_capability: None,
             name: "iOS",
             description: "Chat via Telegram/Discord",
@@ -961,7 +961,7 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
         },
         IntegrationEntry {
             id: "android",
-            implementation_type: IntegrationType::LocalRuntime,
+            implementation_type: IntegrationType::CommunicationChannel,
             setup_capability: None,
             name: "Android",
             description: "Chat via Telegram/Discord",
@@ -1210,6 +1210,24 @@ mod tests {
         }
         assert_eq!(entries.len(), 78);
         assert_eq!(ids.len(), entries.len());
+    }
+
+    #[test]
+    fn communication_family_matches_email_and_mobile_client_roles() {
+        let entries = all_integrations();
+        for id in ["email", "ios", "android"] {
+            let entry = entries.iter().find(|entry| entry.id == id).unwrap();
+            assert_eq!(
+                entry.implementation_type,
+                IntegrationType::CommunicationChannel
+            );
+        }
+
+        for id in ["ios", "android"] {
+            let entry = entries.iter().find(|entry| entry.id == id).unwrap();
+            assert_eq!(entry.category, IntegrationCategory::Platform);
+            assert!(entry.description.contains("Telegram/Discord"));
+        }
     }
 
     #[test]

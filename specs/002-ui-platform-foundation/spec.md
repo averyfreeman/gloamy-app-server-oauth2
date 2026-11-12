@@ -6,7 +6,7 @@
 
 **Status**: Draft
 
-**Input**: User request to split the Vue UI into a public repository, improve mobile use, record WCAG requirements, standardize integration setup, and rank the currently listed integrations by implementation readiness.
+**Input**: User request to split the web UI into a public repository, improve mobile use, record WCAG requirements, standardize integration setup, and rank listed integrations by implementation readiness. Remaining work is limited to the unfinished documentation and WCAG audit tasks, review findings on the open PRs, and the user-approved archive/glossary changes.
 
 ## User Scenarios & Testing
 
@@ -40,12 +40,12 @@ As a user, I want integration cards to show a consistent status and setup action
 
 As a user or maintainer, I want testable accessibility requirements and known gaps recorded so the UI can move toward WCAG conformance without overstating its current state.
 
-**Independent Test**: Review the UI repository's accessibility document and confirm that each WCAG 2.2 Level A and AA success criterion is mapped to applicable UI surfaces, a verification method, and a current status or a justified not-applicable reason.
+**Independent Test**: Review the UI repository's accessibility document and confirm that each WCAG 2.2 Level A and AA success criterion is mapped to applicable UI surfaces, a verification method, and a current status or a justified not-applicable reason; confirm that all 12 routes are included in the audit record.
 
 **Acceptance Scenarios**:
 
 1. **Given** the responsive UI and setup dialog, **When** keyboard and assistive-technology requirements are reviewed, **Then** focus, names, states, errors, status announcements, contrast, reflow, target size, and motion are recorded with verification guidance.
-2. **Given** the audit finds a failing or unverified criterion, **When** the roadmap is published, **Then** it records the gap and next action without claiming full conformance.
+2. **Given** the audit finds a failing or unverified criterion, **When** the roadmap is updated, **Then** it records route/state evidence, priority, and next action without claiming full conformance.
 
 ### User Story 4 - Review which integrations are ready to implement (Priority: P1)
 
@@ -66,8 +66,9 @@ As the maintainer choosing the next integration cards, I want a source-backed li
 - Existing integration status values may describe configuration state rather than whether a setup flow exists.
 - Some integrations have code despite a Coming Soon catalog status; the inventory must note that mismatch.
 - iOS and Android appear as platform entries but are not supported native host targets. Mobile compatibility in this feature means responsive web UI, not native mobile applications.
+- The route inventory includes `/cost-tracking` even though it is a placeholder page; all 12 routes receive an audit disposition.
 - Skills are loaded from a separate endpoint and must not be counted as integration catalog entries.
-- User changes already present under _deprecated/ and GLOSSARY.md are outside this feature's implementation diff and must be preserved.
+- The six moved project/ADR/plan files under `_deprecated/` and the root `GLOSSARY.md` are explicitly included in the parent documentation changes for this feature.
 
 ## Requirements
 
@@ -82,21 +83,23 @@ As the maintainer choosing the next integration cards, I want a source-backed li
 - **FR-007**: The Vue repository MUST document WCAG 2.2 Level A and AA requirements as a criterion-by-criterion checklist with applicable surfaces, verification method, status, and prioritized gaps. Use the [W3C WCAG 2.2 Recommendation](https://www.w3.org/TR/WCAG22/) as the normative source. This feature MUST NOT claim full conformance.
 - **FR-008**: The existing integration catalog MUST remain the source for display metadata and MUST gain stable IDs and an implementation type for every entry. The existing display category MUST remain distinct from implementation type.
 - **FR-009**: The catalog response MUST change additively. Existing wrappers, field names, and meanings MUST remain compatible; setup capability metadata MUST be optional when a setup flow is not implemented.
-- **FR-010**: Backend setup dispatch MUST use one central registry/dispatcher and no more than five implementation families. This feature selects four: AI inference providers, communication channels, remote service connectors, and local runtime capabilities.
+- **FR-010**: Backend setup dispatch MUST use one central registry/dispatcher with executable handlers and no more than five implementation families. A capability MUST be advertised only when its registered handler can execute the advertised operation. This feature selects four: AI inference providers, communication channels, remote service connectors, and local runtime capabilities.
 - **FR-011**: The four families MUST reuse the existing Provider, Channel, and Tool boundaries and factories where applicable; the dispatcher MUST NOT replace them with one monolithic integration implementation.
 - **FR-012**: The UI MUST provide reusable integration-card and setup-dialog templates keyed by stable integration identity or setup capability. A card MUST be interactive only when the server advertises a capability that the UI has registered.
 - **FR-013**: This feature MUST establish the shared catalog, dispatch, and UI templates without implementing setup forms for integrations the user has not yet selected. Existing Codex OAuth setup remains available; all other unimplemented cards remain noninteractive.
 - **FR-014**: The implementation inventory MUST cover all 78 entries currently returned by the integration registry, ordered by rough implementation effort, and record current wrapper/factory support, remaining setup work, platform or external prerequisites, and whether a Git submodule is actually required.
 - **FR-015**: Skills MUST be reported separately because the UI loads them from /api/skills rather than the integration catalog.
-- **FR-016**: Documentation references to archived project files MUST be removed or corrected. The archived ADRs and plans MUST remain archived, and the root GLOSSARY.md MUST remain intact.
+- **FR-016**: Documentation references to moved project files MUST be removed or corrected. The six moved files MUST remain under `_deprecated/`, and the root `GLOSSARY.md` MUST retain the glossary content.
 - **FR-017**: The feature MUST preserve existing provider and channel behavior, API authentication, runtime configuration, and supported host targets. It MUST NOT add native iOS, Android, or Windows support.
+- **FR-018**: Every catalog `implementation_type` MUST be one of the four selected families and match the entry's documented implementation role. Email MUST use the communication-channel family; iOS and Android MUST describe access through existing communication channels, not local native runtimes.
+- **FR-019**: The WCAG audit MUST cover `/`, `/cowork`, `/tools`, `/scheduled`, `/integrations`, `/memory`, `/configuration`, `/cost-tracking`, `/logs`, `/doctor`, `/authentication`, and `/settings`, including applicable dialogs and loading, error, empty, and connected states.
 
 ### Existing Project Impact
 
 - **User-facing surfaces**: Web UI routes, integration catalog, documentation, Docker Compose setup, and repository checkout workflow. CLI behavior and unrelated runtime configuration are unaffected.
-- **Brownfield paths**: The current UI is under web; server catalog code is under src/integrations; provider/channel/tool factories remain in their respective modules; Docker Compose builds from ./web; docs/SUMMARY.md and docs/docs-inventory.md still reference files moved to _deprecated/.
+- **Brownfield paths**: The UI is a submodule at web; server catalog and setup dispatch are under src/integrations and src/gateway; provider/channel/tool factories remain in their respective modules; Docker Compose builds from ./web. The six historical files moved from docs/project and docs/superpowers/plans are retained under _deprecated/, with active references repaired in AGENTS.md, docs/SUMMARY.md, docs/docs-inventory.md, and docs/structure/README.md.
 - **Compatibility and migration**: Parent Git history is not rewritten. The extracted UI repository retains web-only history. The parent pins a UI commit as a submodule. The integration API change is additive, and old servers without new metadata continue to render noninteractive cards.
-- **Preservation boundary**: Keep the existing OpenAI Codex OAuth setup separate from OpenAI API-key setup; keep the same-origin API proxy and bearer authentication; preserve all existing user configuration, auth profiles, routes, and security policy.
+- **Preservation boundary**: Keep the existing OpenAI Codex OAuth setup separate from OpenAI API-key setup; keep the same-origin API proxy and bearer authentication; preserve all existing user configuration, auth profiles, routes, security policy, the full archived file contents, and the root glossary.
 
 ### Key Entities
 
@@ -111,10 +114,13 @@ As the maintainer choosing the next integration cards, I want a source-backed li
 - **SC-002**: A fresh recursive parent clone contains the pinned UI submodule and can build the documented UI deployment.
 - **SC-003**: Every current route remains usable at 320, 375, 768, 1024, and desktop CSS-pixel widths, with no unintended page-level horizontal overflow.
 - **SC-004**: Keyboard users can open, navigate, and close the mobile sidebar with visible focus and correctly announced state.
-- **SC-005**: The accessibility document contains all WCAG 2.2 Level A and AA criteria with a status, verification method, and applicable surface or not-applicable rationale.
+- **SC-005**: The accessibility document contains all WCAG 2.2 Level A and AA criteria and an audit disposition for all 12 routes, with verification evidence, prioritized gaps, and no claim of full conformance.
 - **SC-006**: Every integration catalog entry has a unique stable ID and an implementation type from the selected four-family set; old catalog consumers remain compatible.
 - **SC-007**: Only registered setup capabilities produce interactive cards, and the existing Codex setup remains distinct from OpenAI API-key setup.
 - **SC-008**: The ranked inventory covers the 78 current integration entries and distinguishes dedicated code, generic connectors, partial support, and absent wrappers.
+- **SC-009**: Every advertised setup capability resolves to and executes a registered handler; unsupported IDs and capabilities remain unavailable.
+- **SC-010**: All catalog entries serialize one of the four supported implementation families, with Email and mobile client platform roles represented accurately.
+- **SC-011**: The six moved historical files remain intact under `_deprecated/`, active documentation has no stale links to their old locations, and the root glossary retains its content.
 
 ## Assumptions
 
@@ -123,3 +129,5 @@ As the maintainer choosing the next integration cards, I want a source-backed li
 - Mobile means responsive browser UI for every existing route, not native iOS or Android applications.
 - WCAG 2.2 Level AA is the target for the recorded roadmap; full conformance verification remains follow-up work.
 - The integration architecture uses four concrete handler families and leaves app-specific setup flows for a later user-selected list.
+- Remaining implementation work continues on the existing feature branch and open pull requests; do not create a second feature directory.
+- The route audit records gaps and verified evidence; it does not attempt broad WCAG remediation or certify conformance.

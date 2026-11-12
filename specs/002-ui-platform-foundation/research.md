@@ -1,6 +1,24 @@
 # Integration Readiness Inventory
 
-**Snapshot**: 2026-11-11
+**Snapshot**: 2026-11-12
+
+## Remaining-work analysis
+
+- The active feature remains `specs/002-ui-platform-foundation`. UI PR #1 merged as `f22a349`; parent PR #15 remains open on `feat/ui-platform-foundation`.
+- PR review confirmed that setup metadata must correspond to an executable handler. The Codex device-code handler is now explicitly registered, and authenticated start/inspect/cancel operations dispatch through it. OAuth lifecycle, safe progress views, and encrypted profile writes remain in the existing auth service.
+- Registry evidence confirms Email is an IMAP/SMTP communication channel. iOS and Android catalog descriptions refer to connecting through Telegram/Discord, so their implementation family is `communication_channel` while their display category remains `platform`; they do not represent native runtime targets.
+- The UI router declares 12 routes, including `/cost-tracking`; the updated accessibility roadmap records that route, five viewport widths, the text-spacing override, keyboard checks, observed gaps, and remaining unverified work.
+- The user explicitly approved including the six existing `_deprecated/` moves and root `GLOSSARY.md` in the parent documentation changes. Their content is preserved and active links are repaired; these are no longer excluded worktree changes.
+
+## Decisions and rationale
+
+| Topic | Decision | Rationale | Alternatives considered |
+|---|---|---|---|
+| Capability source | Explicit executable handler registration is authoritative; catalog metadata is emitted only when the matching ID/capability resolves to that handler. | Prevents clients from offering a setup flow that has no backend operation. | Trusting the catalog field alone, which was the behavior flagged in review. |
+| Setup operations | Keep the three current Codex HTTP routes and dispatch each operation through the registered Codex handler. | Retains the existing API contract and bearer checks while making the central handler executable. | Replacing routes or moving OAuth lifecycle/persistence into the integration catalog. |
+| Mobile platform family | Classify iOS/Android as `communication_channel`; preserve `platform` display category. | Their documented connection is through existing chat channels, not native Gloamy runtime support. | `local_runtime`, which incorrectly implies a supported native host. |
+| WCAG disposition | Record verified observations, concrete gaps, and unverified criteria separately; do not claim conformance. | The route audit is a planning and prioritization step, not a certification. | Marking a criterion complete solely because it appears in the roadmap or passes an automated scan. |
+| Archive scope | Include the exact moved files and root glossary in this parent PR. | Explicit user selection overrides the earlier task note that excluded those changes. | Leaving them unstaged or restoring the old paths. |
 
 ## Scope and method
 
