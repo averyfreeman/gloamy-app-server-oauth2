@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, unref } from 'vue'
 import { Icon } from '@iconify/vue'
+import { useI18n } from 'vue-i18n'
+import { requestPairingCode } from '@/lib/desktop'
 import type { AuthState } from '@/stores/auth'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
+const { t } = useI18n()
 
 const code = ref('')
 const tokenInput = ref('')
@@ -13,6 +16,9 @@ const loading = ref(false)
 const savingBaseUrl = ref(false)
 const error = ref('')
 const notice = ref('')
+const recoveryCode = ref('')
+const isDesktop = computed(() => auth.isDesktopApp)
+const desktopError = computed(() => auth.desktopRuntime?.error ?? '')
 
 const isAuthenticated = computed(() => auth.isAuthenticated)
 const isReady = computed(() => auth.isLoaded)
@@ -69,6 +75,33 @@ async function saveBaseUrlAndRetry() {
   }
 }
 
+async function requestLocalPairingCode() {
+  resetMessages()
+  loading.value = true
+  try {
+    const nextCode = await requestPairingCode()
+    code.value = nextCode
+    recoveryCode.value = nextCode
+    notice.value = t('desktop.recoveryReady')
+  }
+  catch (err) {
+    error.value = err instanceof Error ? err.message : t('desktop.recoveryUnavailable')
+  }
+  finally {
+    loading.value = false
+  }
+}
+
+async function copyRecoveryCode() {
+  try {
+    await navigator.clipboard.writeText(recoveryCode.value)
+    notice.value = t('desktop.codeCopied')
+  }
+  catch (err) {
+    error.value = err instanceof Error ? err.message : t('desktop.copyFailed')
+  }
+}
+
 onMounted(async () => {
   if (!auth.isLoaded)
     await auth.load()
@@ -98,11 +131,6 @@ const handleAuthenticate = async () => {
 
   if (trimmedToken && /^[a-f0-9]{64}$/i.test(trimmedToken)) {
     error.value = 'That looks like a hashed token from config.toml. You need the plaintext bearer token (starts with zc_) from a successful /pair response.'
-    return
-  }
-
-  if (trimmedCode.length >= 6 && daemonPaired.value === true) {
-    error.value = 'This daemon is already paired. Pairing codes are only available on first setup. Paste an existing bearer token (zc_...) or clear gateway.paired_tokens in config.toml and restart the daemon to re-pair.'
     return
   }
 
@@ -164,11 +192,15 @@ const handleLogout = async () => {
 
             <template v-else-if="!isAuthenticated || authState === 'unreachable'">
               <div class="space-y-4">
-                <div v-if="authState === 'unreachable'" class="text-sm text-red-500 font-bold text-center">
+                <div v-if="desktopError" class="text-sm text-red-500 font-medium text-center">
+                  {{ desktopError }}
+                </div>
+
+                <div v-if="authState === 'unreachable' && !desktopError" class="text-sm text-red-500 font-bold text-center">
                   Daemon unreachable. Start the daemon and confirm the API base URL.
                 </div>
 
-                <div class="space-y-1.5">
+                <div v-if="!isDesktop" class="space-y-1.5">
                   <label class="text-xs font-medium text-foreground">API base URL</label>
                   <p class="text-[11px] text-muted-foreground">
                     Leave blank to reach the daemon through this app's own origin.
@@ -192,7 +224,26 @@ const handleLogout = async () => {
                 </div>
 
                 <div v-if="daemonPaired === true" class="text-xs text-muted-foreground text-center">
-                  This daemon is already paired. If you lost your bearer token, clear gateway.paired_tokens in config.toml and restart the daemon to generate a new pairing code.
+                  {{ isDesktop ? t('desktop.recoveryHelp') : t('desktop.browserRecoveryHelp') }}
+                </div>
+
+                <button
+                  v-if="isDesktop"
+                  class="w-full h-10 border border-border hover:bg-muted/30 rounded-xl text-sm font-medium transition-all disabled:opacity-40"
+                  :disabled="loading"
+                  @click="requestLocalPairingCode"
+                >
+                  {{ t('desktop.requestPairingCode') }}
+                </button>
+
+                <div v-if="recoveryCode" class="flex items-center gap-2 rounded-xl border border-border bg-muted/20 p-3">
+                  <code class="flex-1 text-center font-mono text-lg tracking-[0.3em]">{{ recoveryCode }}</code>
+                  <button
+                    class="shrink-0 rounded-lg border border-border px-3 py-2 text-xs font-medium hover:bg-muted/30"
+                    @click="copyRecoveryCode"
+                  >
+                    {{ t('desktop.copyCode') }}
+                  </button>
                 </div>
 
                 <div class="space-y-1.5">

@@ -237,5 +237,20 @@
       "version": "Version",
       "company": "Entreprise"
     }
+  },
+  "desktop": {
+    "sectionTitle": "Application de bureau",
+    "keepRunningTitle": "Garder le daemon actif après la fermeture",
+    "keepRunningHelp": "Laisser le daemon géré accessible depuis l'interface web après la fermeture de l'application. Désactivé, l'application arrête son daemon à la fermeture.",
+    "recoveryAction": "Récupération de l'association",
+    "recoveryHelp": "Demander un code à usage unique sans modifier les appareils déjà associés.",
+    "requestPairingCode": "Demander un code d'association",
+    "recoveryReady": "Le code à usage unique est prêt. Saisissez-le pour terminer l'association.",
+    "recoveryUnavailable": "Impossible de demander un code local.",
+    "copyCode": "Copier le code",
+    "codeCopied": "Code d'association copié.",
+    "copyFailed": "Impossible de copier le code d'association.",
+    "browserRecoveryHelp": "Pour ce daemon déjà associé, utilisez l'application de bureau pour demander un code à usage unique ou collez un jeton existant.",
+    "preferencesUnavailable": "Les préférences de bureau sont indisponibles."
   }
 }

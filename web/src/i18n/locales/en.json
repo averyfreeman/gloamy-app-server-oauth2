@@ -66,6 +66,21 @@
       "version": "Version",
       "company": "Company"
     }
+  },
+  "desktop": {
+    "sectionTitle": "Desktop application",
+    "keepRunningTitle": "Keep daemon running after closing",
+    "keepRunningHelp": "Leave the managed daemon available to the browser UI when this app closes. When off, the app stops its managed daemon on close.",
+    "recoveryAction": "Pairing recovery",
+    "recoveryHelp": "Request a single-use pairing code without changing existing paired devices.",
+    "requestPairingCode": "Request one-time pairing code",
+    "recoveryReady": "One-time pairing code is ready. Enter it to finish pairing.",
+    "recoveryUnavailable": "Could not request a local pairing code.",
+    "copyCode": "Copy code",
+    "codeCopied": "Pairing code copied.",
+    "copyFailed": "Could not copy the pairing code.",
+    "browserRecoveryHelp": "For this already paired daemon, use the desktop app to request a one-time pairing code or paste an existing bearer token.",
+    "preferencesUnavailable": "Desktop preferences are unavailable."
   }
 }
 

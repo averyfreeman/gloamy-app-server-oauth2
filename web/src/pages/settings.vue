@@ -4,19 +4,70 @@ import { Icon } from '@iconify/vue'
 import { useAuthStore } from '@/stores/auth'
 import { useSettingsStore } from '@/stores/settings'
 import { useColorMode } from '@vueuse/core'
+import { useI18n } from 'vue-i18n'
+import { getKeepDaemonRunning, isDesktopApp, requestPairingCode, setKeepDaemonRunning } from '@/lib/desktop'
 
 const auth = useAuthStore()
 const settingsStore = useSettingsStore()
 const mode = useColorMode()
+const { t } = useI18n()
 
 const selectedTheme = ref<'light'|'dark'|'auto'>('auto')
+const keepDaemonRunning = ref(false)
+const savingKeepRunning = ref(false)
+const pairingCode = ref('')
+const desktopError = ref('')
 
 onMounted(async () => {
-  const t = await settingsStore.getSetting<string>('theme')
-  if (t === 'light' || t === 'dark' || t === 'auto') {
-    selectedTheme.value = t
+  const theme = await settingsStore.getSetting<string>('theme')
+  if (theme === 'light' || theme === 'dark' || theme === 'auto') {
+    selectedTheme.value = theme
+  }
+
+  if (isDesktopApp) {
+    try {
+      keepDaemonRunning.value = await getKeepDaemonRunning()
+    }
+    catch (error) {
+      desktopError.value = error instanceof Error ? error.message : t('desktop.preferencesUnavailable')
+    }
   }
 })
+
+async function saveKeepRunning() {
+  savingKeepRunning.value = true
+  desktopError.value = ''
+  try {
+    await setKeepDaemonRunning(keepDaemonRunning.value)
+  }
+  catch (error) {
+    keepDaemonRunning.value = !keepDaemonRunning.value
+    desktopError.value = error instanceof Error ? error.message : t('desktop.preferencesUnavailable')
+  }
+  finally {
+    savingKeepRunning.value = false
+  }
+}
+
+async function recoverPairing() {
+  pairingCode.value = ''
+  desktopError.value = ''
+  try {
+    pairingCode.value = await requestPairingCode()
+  }
+  catch (error) {
+    desktopError.value = error instanceof Error ? error.message : t('desktop.recoveryUnavailable')
+  }
+}
+
+async function copyPairingCode() {
+  try {
+    await navigator.clipboard.writeText(pairingCode.value)
+  }
+  catch (error) {
+    desktopError.value = error instanceof Error ? error.message : t('desktop.copyFailed')
+  }
+}
 
 function handleThemeChange(theme: 'light' | 'dark' | 'auto') {
   selectedTheme.value = theme
@@ -139,6 +190,54 @@ function openWebsite() {
       </section>
 
       <hr class="border-border/30" />
+
+      <section v-if="isDesktopApp" class="space-y-4">
+        <div class="flex items-center gap-2">
+          <Icon icon="hugeicons:computer-settings" class="size-[15px] text-muted-foreground" />
+          <h2 class="text-[13px] font-medium text-muted-foreground">{{ t('desktop.sectionTitle') }}</h2>
+        </div>
+
+        <div class="flex items-center justify-between gap-4 py-2 px-1">
+          <div>
+            <p class="text-[13px] font-medium text-foreground">{{ t('desktop.keepRunningTitle') }}</p>
+            <p class="text-[12px] text-muted-foreground mt-0.5">{{ t('desktop.keepRunningHelp') }}</p>
+          </div>
+          <input
+            v-model="keepDaemonRunning"
+            type="checkbox"
+            class="size-4 accent-primary"
+            :disabled="savingKeepRunning"
+            :aria-label="t('desktop.keepRunningTitle')"
+            @change="saveKeepRunning"
+          >
+        </div>
+
+        <div class="flex items-center justify-between gap-4 py-2 px-1">
+          <div>
+            <p class="text-[13px] font-medium text-foreground">{{ t('desktop.recoveryAction') }}</p>
+            <p class="text-[12px] text-muted-foreground mt-0.5">{{ t('desktop.recoveryHelp') }}</p>
+          </div>
+          <button
+            class="flex items-center gap-1.5 px-3 py-1.5 border border-border hover:border-foreground/30 text-foreground transition-colors rounded-lg text-[12px] font-medium shrink-0"
+            @click="recoverPairing"
+          >
+            {{ t('desktop.requestPairingCode') }}
+          </button>
+        </div>
+
+        <div v-if="pairingCode" class="flex items-center gap-2 rounded-xl border border-border bg-muted/20 p-3">
+          <code class="flex-1 text-center font-mono text-lg tracking-[0.3em]">{{ pairingCode }}</code>
+          <button
+            class="shrink-0 rounded-lg border border-border px-3 py-2 text-xs font-medium hover:bg-muted/30"
+            @click="copyPairingCode"
+          >
+            {{ t('desktop.copyCode') }}
+          </button>
+        </div>
+        <p v-if="desktopError" class="text-xs text-red-500">{{ desktopError }}</p>
+      </section>
+
+      <hr v-if="isDesktopApp" class="border-border/30" />
 
       <!-- Config Section -->
       <section class="space-y-3">

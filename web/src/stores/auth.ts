@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { apiFetch, pair as pairRequest, UnauthorizedError } from '@/lib/api'
+import { getDaemonStatus, isDesktopApp, type DesktopRuntime } from '@/lib/desktop'
 import { WebStore } from '@/lib/storage'
 
 const store = new WebStore('auth.json')
@@ -20,6 +21,7 @@ export const useAuthStore = defineStore('auth', () => {
   const baseUrl = ref<string>(DEFAULT_BASE_URL)
   const isLoaded = ref(false)
   const authState = ref<AuthState>('unknown')
+  const desktopRuntime = ref<DesktopRuntime | null>(null)
 
   const isAuthenticated = computed(() => authState.value === 'authenticated')
 
@@ -27,14 +29,31 @@ export const useAuthStore = defineStore('auth', () => {
     if (isLoaded.value)
       return
 
+    if (isDesktopApp) {
+      try {
+        desktopRuntime.value = await getDaemonStatus()
+        baseUrl.value = desktopRuntime.value.api_base_url ?? ''
+      }
+      catch (error) {
+        desktopRuntime.value = {
+          ready: false,
+          api_base_url: null,
+          desktop_managed: false,
+          error: error instanceof Error ? error.message : 'Unable to connect to the desktop daemon manager.',
+        }
+      }
+    }
+
     try {
       const storedToken = await store.get<string>(TOKEN_KEY)
       if (typeof storedToken === 'string' && storedToken.trim().length > 0)
         token.value = storedToken
 
-      const storedBaseUrl = await store.get<string>(BASE_URL_KEY)
-      if (typeof storedBaseUrl === 'string' && storedBaseUrl.trim().length > 0)
-        baseUrl.value = storedBaseUrl
+      if (!isDesktopApp) {
+        const storedBaseUrl = await store.get<string>(BASE_URL_KEY)
+        if (typeof storedBaseUrl === 'string' && storedBaseUrl.trim().length > 0)
+          baseUrl.value = storedBaseUrl
+      }
     }
     catch (error) {
       console.error('Failed to load auth state:', error)
@@ -75,6 +94,8 @@ export const useAuthStore = defineStore('auth', () => {
   async function setBaseUrl(value: string) {
     const nextValue = value.trim() || DEFAULT_BASE_URL
     baseUrl.value = nextValue
+    if (isDesktopApp)
+      return
     await store.set(BASE_URL_KEY, nextValue)
     await store.save()
   }
@@ -127,6 +148,8 @@ export const useAuthStore = defineStore('auth', () => {
     isLoaded,
     authState,
     isAuthenticated,
+    isDesktopApp,
+    desktopRuntime,
     load,
     validateToken,
     setBaseUrl,

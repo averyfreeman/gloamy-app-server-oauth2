@@ -9,6 +9,7 @@ For current runtime behavior, start here:
 - Config reference: [../config-reference.md](../config-reference.md)
 - Operations runbook: [../operations-runbook.md](../operations-runbook.md)
 - Troubleshooting: [../troubleshooting.md](../troubleshooting.md)
+- Desktop control socket: [desktop-control-socket.md](desktop-control-socket.md)
 
 The autonomy config reference documents the runtime-updatable command allowlist and other policy knobs.
 
