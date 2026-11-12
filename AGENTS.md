@@ -169,7 +169,6 @@ Collection indexes (category navigation):
 - `docs/operations/README.md`
 - `docs/security/README.md`
 - `docs/contributing/README.md`
-- `docs/project/README.md`
 
 Runtime-contract references (must track behavior changes):
 

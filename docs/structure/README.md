@@ -6,7 +6,7 @@ This page defines the documentation structure across three axes:
 2. Part (category)
 3. Function (document intent)
 
-Last refreshed: **February 22, 2026**.
+Last refreshed: **November 12, 2026**.
 
 ## 1) By Language
 
@@ -25,7 +25,7 @@ These directories are the primary navigation modules by product area.
 - `docs/operations/` for day-2 operations, deployment, and troubleshooting entry points
 - `docs/security/` for security guidance and security-oriented navigation
 - `docs/` root policy/process docs (`pr-workflow.md`, `reviewer-playbook.md`, `ci-map.md`) for contribution and CI/review processes
-- `docs/project/` for project snapshots, planning context, and status-oriented docs
+- `docs/project-triage-snapshot-*.md` for dated project snapshots. Historical project material moved to `_deprecated/` is archived and is not current guidance.
 
 ## 3) By Function (Document Intent)
 

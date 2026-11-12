@@ -70,8 +70,6 @@ Last refreshed: **November 12, 2026**.
 
 ### 7) Project Status & Snapshot
 
-- [project/README.md](project/README.md)
-- [project/adr/0002-codex-app-server-oauth-ownership.md](project/adr/0002-codex-app-server-oauth-ownership.md)
-- [project/glossary.md](project/glossary.md)
+- [Domain Glossary](../GLOSSARY.md)
 - [project-triage-snapshot-2026-02-18.md](project-triage-snapshot-2026-02-18.md)
 - [docs-inventory.md](docs-inventory.md)

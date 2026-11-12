@@ -1,6 +1,6 @@
 # Desktop Control Socket Security
 
-Last verified: **November 11, 2026**.
+Last verified: **November 12, 2026**.
 
 The standalone Tauri desktop client manages a local Gloamy daemon through a
 local Unix domain socket. The socket is created below the operating system temporary
