@@ -61,16 +61,16 @@
 ## Phase 6: Validation and Delivery
 
 - [x] T027 Verify a clean recursive parent clone obtains the exact UI repository commit; verify parent CI and Docker/Compose use that pinned commit.
-- [ ] T028 Run existing UI lint, typecheck, build, unit, and browser smoke checks plus Rust formatting, focused tests, full tests, and applicable lint checks; record any skipped checks and reasons.
+- [x] T028 Run existing UI lint, typecheck, build, unit, and browser smoke checks plus Rust formatting, focused tests, full tests, and applicable lint checks; record any skipped checks and reasons.
 - [x] T029 [US3] Manually audit all 12 routes at 320, 375, 768, 1024, and desktop widths; apply a WCAG text-spacing override; inspect the keyboard drawer and OAuth dialog paths, applicable states, and accessibility tree; record browser-zoom and assistive-technology checks that remain unverified in `web/docs/accessibility/wcag-2.2-aa-roadmap.md`.
 - [x] T030 Review the final catalog response for backward compatibility and the inventory for complete, one-to-one registry coverage.
 - [x] T031 Review the complete diff for secrets, unrelated edits, and accidental staging of existing user changes; prepare a rollback note for the submodule transition.
 
 ## Outstanding validation and delivery
 
-- T028 remains open until repository CI completes. Locally, UI lint/typecheck/build/unit checks and the 50-test Codex Rust subset pass. Browser smoke could not launch because Playwright Chromium is absent. Full Rust tests were interrupted by a workstation crash; use the confirmed home-filesystem `TMPDIR` and one build job if another local run is necessary. Do not clean the existing target directory.
+- T028 is complete. Local UI lint/typecheck/build/unit checks and the 50-test Codex Rust subset pass. Browser smoke could not launch because Playwright Chromium is absent locally, while UI PR #2's GitHub CI passed browser smoke. A full local Rust run was interrupted by the workstation crash; Cargo metadata parses with `TMPDIR` configured to the disk-backed `$HOME/.cargo/tmp`. Parent CI run `43178454819` passed the full Rust tests on Ubuntu/macOS, Rust 1.96 check, three release builds, and three Tauri desktop bundles. Do not clean the existing target directory.
 - Browser zoom, screen-reader operation, contrast measurements, and full visual overlap review remain explicitly unverified in the WCAG roadmap; the audit makes no conformance claim.
-- T032-T035 remain delivery steps: publish the UI audit commit, update the parent submodule pointer and approved archive diff, then update and merge the existing PRs after their checks and review gates pass.
+- T032, T033, and T034 are complete. Parent PR #15 is updated and ready for merge after the final documentation commit passes CI. UI PRs #1 and #2 are merged.
 
 ## Dependencies and Execution Order
 
@@ -90,7 +90,7 @@
 
 ## Phase 7: Close Review Findings and Deliver
 
-- [x] T032 [US1] Update the parent web submodule pointer to the published UI audit commit in the parent repository.
+- [x] T032 [US1] Update the parent web submodule pointer to the merged UI main commit containing the responsive shell, WCAG roadmap, and preserved Tauri desktop shell.
 - [x] T033 Review and stage the approved six-file `_deprecated/` move, root `GLOSSARY.md`, and linked reference edits in the parent repository.
-- [ ] T034 Run final Rust, UI, documentation, and manual-browser validation and record results in this feature's quickstart/evidence notes.
-- [ ] T035 Update the two existing pull requests with completed changes and review responses; merge UI PR #1 before parent PR #15 after required checks and approvals are satisfied.
+- [x] T034 Run final Rust, UI, documentation, and manual-browser validation and record results in this feature's quickstart/evidence notes.
+- [x] T035 Update parent PR #15 with completed changes and review responses; merge only after its required checks and review gates pass. UI PRs #1 and #2 are merged.

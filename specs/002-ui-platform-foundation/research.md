@@ -4,7 +4,7 @@
 
 ## Remaining-work analysis
 
-- The active feature remains `specs/002-ui-platform-foundation`. UI PR #1 merged as `f22a349`; parent PR #15 remains open on `feat/ui-platform-foundation`.
+- The active feature remains `specs/002-ui-platform-foundation`. UI PR #1 delivered the responsive extraction, and UI PR #2 merged the Tauri desktop shell at UI main `087c51b`. Parent PR #15 remains open on `feat/ui-platform-foundation`; its full Rust/Tauri CI run `43178454819` passed on implementation commit `407c0d8`.
 - PR review confirmed that setup metadata must correspond to an executable handler. The Codex device-code handler is now explicitly registered, and authenticated start/inspect/cancel operations dispatch through it. OAuth lifecycle, safe progress views, and encrypted profile writes remain in the existing auth service.
 - Registry evidence confirms Email is an IMAP/SMTP communication channel. iOS and Android catalog descriptions refer to connecting through Telegram/Discord, so their implementation family is `communication_channel` while their display category remains `platform`; they do not represent native runtime targets.
 - The UI router declares 12 routes, including `/cost-tracking`; the updated accessibility roadmap records that route, five viewport widths, the text-spacing override, keyboard checks, observed gaps, and remaining unverified work.
