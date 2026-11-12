@@ -54,6 +54,8 @@ Last reviewed: **November 3, 2026**.
 | `docs/zai-glm-setup.md` | Current Provider Setup Guide | users/operators |
 | `docs/langgraph-integration.md` | Current Integration Guide | integration developers |
 | `docs/operations-runbook.md` | Current Guide | operators |
+| `docs/security/desktop-control-socket.md` | Current Security Guide | desktop users/operators |
+| `docs/i18n/en/desktop-app.md` | Current Guide | desktop users/operators |
 | `docs/troubleshooting.md` | Current Guide | users/operators |
 | `docs/network-deployment.md` | Current Guide | operators |
 | `docs/mattermost-setup.md` | Current Guide | operators |

@@ -325,6 +325,45 @@ pub struct AppState {
 /// Run the HTTP gateway using axum with proper HTTP/1.1 compliance.
 #[allow(clippy::too_many_lines)]
 pub async fn run_gateway(host: &str, port: u16, config: Config) -> Result<()> {
+    let pairing = Arc::new(PairingGuard::new(
+        config.gateway.require_pairing,
+        &config.gateway.paired_tokens,
+    ));
+    run_gateway_inner(host, port, config, pairing, true, None, None).await
+}
+
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+pub(crate) async fn run_daemon_gateway(
+    host: &str,
+    port: u16,
+    config: Config,
+    pairing: Arc<PairingGuard>,
+    desktop_managed: bool,
+    gateway_addr: tokio::sync::watch::Sender<Option<SocketAddr>>,
+    shutdown: tokio::sync::watch::Receiver<bool>,
+) -> Result<()> {
+    run_gateway_inner(
+        host,
+        port,
+        config,
+        pairing,
+        !desktop_managed,
+        Some(gateway_addr),
+        Some(shutdown),
+    )
+    .await
+}
+
+#[allow(clippy::too_many_lines)]
+async fn run_gateway_inner(
+    host: &str,
+    port: u16,
+    config: Config,
+    pairing: Arc<PairingGuard>,
+    display_pairing_code: bool,
+    gateway_addr: Option<tokio::sync::watch::Sender<Option<SocketAddr>>>,
+    shutdown: Option<tokio::sync::watch::Receiver<bool>>,
+) -> Result<()> {
     crate::tools::browser_services::ensure_started(&config.browser).await;
 
     // ── Security: refuse public bind without tunnel or explicit opt-in ──
@@ -347,7 +386,8 @@ pub async fn run_gateway(host: &str, port: u16, config: Config) -> Result<()> {
 
     let addr: SocketAddr = format!("{host}:{port}").parse()?;
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    let actual_port = listener.local_addr()?.port();
+    let actual_addr = listener.local_addr()?;
+    let actual_port = actual_addr.port();
     let display_addr = format!("{host}:{actual_port}");
 
     let provider: Arc<dyn Provider> = Arc::from(providers::create_resilient_provider_with_options(
@@ -538,10 +578,6 @@ pub async fn run_gateway(host: &str, port: u16, config: Config) -> Result<()> {
             .map(Arc::from);
 
     // ── Pairing guard ──────────────────────────────────────
-    let pairing = Arc::new(PairingGuard::new(
-        config.gateway.require_pairing,
-        &config.gateway.paired_tokens,
-    ));
     let rate_limit_max_keys = normalize_max_keys(
         config.gateway.rate_limit_max_keys,
         RATE_LIMIT_MAX_KEYS_DEFAULT,
@@ -602,7 +638,7 @@ pub async fn run_gateway(host: &str, port: u16, config: Config) -> Result<()> {
     println!("  GET  /ws/chat   — WebSocket agent chat");
     println!("  GET  /health    — health check");
     println!("  GET  /metrics   — Prometheus metrics");
-    if let Some(code) = pairing.pairing_code() {
+    if display_pairing_code && let Some(code) = pairing.pairing_code() {
         println!();
         println!("  🔐 PAIRING REQUIRED — use this one-time code:");
         println!("     ┌──────────────┐");
@@ -753,11 +789,31 @@ pub async fn run_gateway(host: &str, port: u16, config: Config) -> Result<()> {
         .fallback(get(static_files::handle_spa_fallback));
 
     // Run the server
-    axum::serve(
-        listener,
-        app.into_make_service_with_connect_info::<SocketAddr>(),
-    )
-    .await?;
+    let service = app.into_make_service_with_connect_info::<SocketAddr>();
+    let serve_result = match shutdown {
+        Some(mut shutdown) => {
+            if let Some(address) = &gateway_addr {
+                address.send_replace(Some(actual_addr));
+            }
+            let server = axum::serve(listener, service).with_graceful_shutdown(async move {
+                if *shutdown.borrow() {
+                    return;
+                }
+                while shutdown.changed().await.is_ok() {
+                    if *shutdown.borrow() {
+                        break;
+                    }
+                }
+            });
+            let result = server.await;
+            if let Some(address) = &gateway_addr {
+                address.send_replace(None);
+            }
+            result
+        }
+        None => axum::serve(listener, service).await,
+    };
+    serve_result?;
 
     Ok(())
 }

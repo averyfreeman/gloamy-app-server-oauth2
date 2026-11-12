@@ -237,5 +237,20 @@
       "version": "Sürüm",
       "company": "Şirket"
     }
+  },
+  "desktop": {
+    "sectionTitle": "Masaüstü uygulaması",
+    "keepRunningTitle": "Kapattıktan sonra arka plan hizmetini çalışır tut",
+    "keepRunningHelp": "Uygulama kapandığında yönetilen hizmeti web arayüzü için kullanılabilir bırakır. Kapalıysa uygulama kapanırken kendi hizmetini durdurur.",
+    "recoveryAction": "Eşleştirme kurtarma",
+    "recoveryHelp": "Mevcut eşleştirilmiş cihazları değiştirmeden tek kullanımlık bir kod isteyin.",
+    "requestPairingCode": "Tek kullanımlık eşleştirme kodu iste",
+    "recoveryReady": "Tek kullanımlık eşleştirme kodu hazır. Eşleştirmeyi tamamlamak için kodu girin.",
+    "recoveryUnavailable": "Yerel eşleştirme kodu istenemedi.",
+    "copyCode": "Kodu kopyala",
+    "codeCopied": "Eşleştirme kodu kopyalandı.",
+    "copyFailed": "Eşleştirme kodu kopyalanamadı.",
+    "browserRecoveryHelp": "Bu daemon zaten eşleştirilmiş. Tek kullanımlık kod istemek için masaüstü uygulamasını kullanın veya mevcut bearer token'ı yapıştırın.",
+    "preferencesUnavailable": "Masaüstü tercihleri kullanılamıyor."
   }
 }

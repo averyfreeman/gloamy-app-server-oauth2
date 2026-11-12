@@ -11,6 +11,8 @@
     "lint": "oxlint src tests vite.config.ts vitest.config.ts playwright.config.ts eslint.config.js --vue-plugin && eslint 'src/**/*.vue'",
     "lint:fix": "oxlint src tests vite.config.ts vitest.config.ts playwright.config.ts eslint.config.js --vue-plugin --fix && eslint 'src/**/*.vue' --fix",
     "preview": "vite preview",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
     "test": "pnpm test:unit && pnpm build && pnpm test:smoke",
     "test:smoke": "playwright test",
     "test:unit": "vitest run",
@@ -19,6 +21,7 @@
   "dependencies": {
     "@hugeicons/core-free-icons": "^4.0.0",
     "@hugeicons/vue": "^1.0.5",
+    "@tauri-apps/api": "^2.8.0",
     "@iconify-json/hugeicons": "^1.2.24",
     "@iconify-json/simple-icons": "^1.2.63",
     "@iconify/utils": "^3.1.0",
@@ -40,6 +43,7 @@
   },
   "devDependencies": {
     "@antfu/eslint-config": "^10.0.0",
+    "@tauri-apps/cli": "^2.8.0",
     "@iconify/vue": "^5.0.0",
     "@playwright/test": "^1.65.0",
     "@types/node": "^26.6.6",
