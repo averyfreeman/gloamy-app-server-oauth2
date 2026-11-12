@@ -60,11 +60,17 @@
 
 ## Phase 6: Validation and Delivery
 
-- [ ] T027 Verify a clean recursive parent clone obtains the exact UI repository commit; verify parent CI and Docker/Compose use that pinned commit.
+- [x] T027 Verify a clean recursive parent clone obtains the exact UI repository commit; verify parent CI and Docker/Compose use that pinned commit.
 - [ ] T028 Run the existing UI typecheck, build, lint, unit, and browser smoke checks; run focused Rust coverage and relevant formatting/lint checks, recording any skipped checks and reasons.
 - [ ] T029 Manually review every route at 320, 375, 768, 1024, and desktop widths; verify keyboard-only sidebar operation and the accessibility roadmap's audit evidence.
-- [ ] T030 Review the final catalog response for backward compatibility and the inventory for complete, one-to-one registry coverage.
-- [ ] T031 Review the complete diff for secrets, unrelated edits, and accidental staging of existing user changes; prepare a rollback note for the submodule transition.
+- [x] T030 Review the final catalog response for backward compatibility and the inventory for complete, one-to-one registry coverage.
+- [x] T031 Review the complete diff for secrets, unrelated edits, and accidental staging of existing user changes; prepare a rollback note for the submodule transition.
+
+## Remaining verification and user-owned worktree changes
+
+- T005/T025: stale project-document references were cleaned in the local worktree, but those edits and the copied root `GLOSSARY.md` remain unstaged per T001; the PR does not claim to carry the user's archive move.
+- T015/T029: the roadmap records required audits, but the complete screen-reader/keyboard audit and every-route viewport sweep still need to be done.
+- T028: local Playwright smoke could not launch because its configured Chromium revision is absent. UI CI installs that revision; focused Rust and other UI checks passed locally.
 
 ## Dependencies and Execution Order
 
