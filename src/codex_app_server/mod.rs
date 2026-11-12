@@ -18,6 +18,7 @@ use uuid::Uuid;
 const CODEX_EXECUTABLE: &str = "codex";
 const APP_SERVER_STARTUP_TIMEOUT: Duration = Duration::from_secs(30);
 const APP_SERVER_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+const APP_SERVER_EXIT_STATUS_TIMEOUT: Duration = Duration::from_millis(100);
 const QUEUED_NOTIFICATION_LIMIT: usize = 4096;
 
 /// A model exposed by the installed Codex model catalog.
@@ -270,10 +271,20 @@ impl CodexAppServerClient {
             .await
             .context("failed to read from Codex App Server")?;
         if bytes_read == 0 {
-            let status = self
-                .child
-                .try_wait()
-                .context("failed to inspect Codex App Server process status")?;
+            // Pipe EOF can be observed just before the OS exposes the child exit
+            // status. Wait briefly so ordinary process exits report their status,
+            // but do not hang if a broken server closes stdout and stays alive.
+            let status =
+                match tokio::time::timeout(APP_SERVER_EXIT_STATUS_TIMEOUT, self.child.wait()).await
+                {
+                    Ok(status) => {
+                        Some(status.context("failed to inspect Codex App Server process status")?)
+                    }
+                    Err(_) => self
+                        .child
+                        .try_wait()
+                        .context("failed to inspect Codex App Server process status")?,
+                };
             anyhow::bail!("Codex App Server closed its stdio stream (process status: {status:?})");
         }
         serde_json::from_str(line.trim_end())
