@@ -78,8 +78,8 @@ High-level repository map:
 - [`src/security/`](src/security): policy, pairing, secret handling
 - [`src/gateway/`](src/gateway): HTTP and websocket gateway
 - [`src/runtime/`](src/runtime): runtime adapters
-- [Gloamy Web UI](https://github.com/averyfreeman/gloamy-fork-ui): standalone Vue client
-- [Gloamy Desktop](https://github.com/averyfreeman/gloamy-fork-desktop-ui): standalone Tauri client
+- [Gloamy Web UI](https://github.com/search?q=gloamy-fork-ui&type=repositories): standalone Vue client
+- [Gloamy Desktop](https://github.com/search?q=gloamy-fork-desktop-ui&type=repositories): standalone Tauri client
 - [`docs/`](docs): operator, reference, and contribution docs
 
 ## Key Properties
@@ -260,8 +260,8 @@ If you want a safe preview of the candidate entries without writing data, use `-
 
 ## Independent UI Projects
 
-The [Gloamy Web UI](https://github.com/averyfreeman/gloamy-fork-ui) and
-[Gloamy Desktop](https://github.com/averyfreeman/gloamy-fork-desktop-ui) are
+The [Gloamy Web UI](https://github.com/search?q=gloamy-fork-ui&type=repositories) and
+[Gloamy Desktop](https://github.com/search?q=gloamy-fork-desktop-ui&type=repositories) are
 maintained in separate repositories. Both use the daemon's REST and SSE API;
 the desktop project also bundles a versioned daemon binary for supported hosts.
 

@@ -2,7 +2,7 @@
 
 ## Project Identity
 
-Gloamy is a Rust-first autonomous agent runtime for CLI use, model providers, communication channels, tools, memory, gateways, and service workflows. The repository also contains a Vue and TypeScript web client under `web/`.
+Gloamy is a Rust-first autonomous agent runtime for CLI use, model providers, communication channels, tools, memory, gateways, and service workflows. The Web UI and Tauri desktop client are maintained in the standalone `gloamy-fork-ui` and `gloamy-fork-desktop-ui` repositories.
 
 ## Core Principles
 
@@ -20,7 +20,7 @@ Prefer the smallest complete change that meets an accepted requirement. Do not a
 
 ### IV. Maintain Reproducible Quality Gates
 
-Rust changes MUST preserve formatting, lint, locked dependency, and CI expectations. Use existing unit and integration coverage according to the risk of the changed path. Web changes MUST preserve the `web/` package's type-check and build requirements. Do not weaken CI to make a change pass.
+Rust changes MUST preserve formatting, lint, locked dependency, and CI expectations. Use existing unit and integration coverage according to the risk of the changed path. Client changes MUST preserve the type-check, build, and CI requirements in the corresponding standalone client repository. Do not weaken CI to make a change pass.
 
 ### V. Support Only the Defined Host Targets
 
@@ -29,7 +29,7 @@ The supported generic host architectures are exactly `linux-amd64`, `linux-arm64
 ## Code Boundaries
 
 - `src/` contains the Rust application, configuration, providers, channels, tools, gateway, memory, security, runtime, and CLI modules.
-- `web/` contains the Vue and TypeScript web client.
+- Web UI and Tauri desktop client source lives in the standalone `gloamy-fork-ui` and `gloamy-fork-desktop-ui` repositories.
 - `docs/` contains user, operations, architecture, and contributor documentation.
 - `scripts/` contains repository maintenance, install, and CI helper scripts.
 - `.github/workflows/` contains CI and release automation; its supported target matrix MUST match this constitution.
@@ -60,4 +60,4 @@ The supported generic host architectures are exactly `linux-amd64`, `linux-arm64
 
 Changes to this constitution require a reviewed change, a semantic version increment, and an explanation in the change summary. Feature specifications and plans MUST identify constitution checks and any justified exception before implementation. Reviewers MUST check that behavior, tests, docs, CI, and release surfaces agree. When this constitution and `AGENTS.md` appear inconsistent, stop and resolve the conflict rather than silently weakening either policy.
 
-**Version**: 1.0.0 | **Ratified**: 2026-11-06 | **Last Amended**: 2026-11-06
+**Version**: 1.1.0 | **Ratified**: 2026-11-06 | **Last Amended**: 2026-11-12

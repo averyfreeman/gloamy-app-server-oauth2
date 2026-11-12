@@ -72,9 +72,9 @@ for development; the `release` stage stays smaller.
 
 ## Clients
 
-- [Gloamy Web UI](https://github.com/averyfreeman/gloamy-fork-ui) — deployment
+- [Gloamy Web UI](https://github.com/search?q=gloamy-fork-ui&type=repositories) — deployment
   and reverse-proxy instructions for the browser client.
-- [Gloamy Desktop](https://github.com/averyfreeman/gloamy-fork-desktop-ui) — a
+- [Gloamy Desktop](https://github.com/search?q=gloamy-fork-desktop-ui&type=repositories) — a
   native client that can start or attach to a local daemon.
 
 For safe non-loopback gateway exposure, see [network-deployment.md](network-deployment.md).

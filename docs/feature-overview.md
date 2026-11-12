@@ -66,8 +66,8 @@ Important security and runtime properties include:
 
 ### Independent clients
 
-The [Gloamy Web UI](https://github.com/averyfreeman/gloamy-fork-ui) and
-[Gloamy Desktop](https://github.com/averyfreeman/gloamy-fork-desktop-ui) are
+The [Gloamy Web UI](https://github.com/search?q=gloamy-fork-ui&type=repositories) and
+[Gloamy Desktop](https://github.com/search?q=gloamy-fork-desktop-ui&type=repositories) are
 maintained separately from the daemon and connect through its gateway API.
 
 ## Best entry points

@@ -24,7 +24,7 @@ For first-time installation, start from [one-click-bootstrap.md](one-click-boots
 | User service | `gloamy service install && gloamy service start` | persistent operator-managed runtime |
 
 The web and desktop clients are maintained separately from the daemon. The
-[desktop guides](https://github.com/averyfreeman/gloamy-fork-desktop-ui/tree/main/docs/i18n)
+[desktop guides](https://github.com/search?q=gloamy-fork-desktop-ui&type=repositories)
 cover its daemon lifecycle and local pairing recovery. The backend's private
 control-socket contract is documented in
 [Desktop control socket security](security/desktop-control-socket.md).

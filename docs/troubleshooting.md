@@ -248,7 +248,7 @@ Expected behavior:
 
 What to do:
 
-- use the [Gloamy Web UI](https://github.com/averyfreeman/gloamy-fork-ui) or [Gloamy Desktop](https://github.com/averyfreeman/gloamy-fork-desktop-ui) for a graphical interface
+- use the [Gloamy Web UI](https://github.com/search?q=gloamy-fork-ui&type=repositories) or [Gloamy Desktop](https://github.com/search?q=gloamy-fork-desktop-ui&type=repositories) for a graphical interface
 - use gateway routes only for integrations, automation, health checks, and API traffic
 
 ### Pairing / auth failures on webhook
